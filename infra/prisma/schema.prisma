@@ -1,0 +1,202 @@
+// Prisma schema for Trudy V4 (PlanetScale MySQL)
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider             = "mysql"
+  url                  = env("DATABASE_URL")
+  referentialIntegrity = "prisma"
+}
+
+// ===== Enums (one value per line) =====
+
+enum CampaignStatus {
+  DRAFT
+  RUNNING
+  PAUSED
+  COMPLETE
+  FAILED
+}
+
+enum Mode {
+  EVALUATION
+  CREATE
+}
+
+enum Phase {
+  FRAMING
+  CREATE
+  EVALUATE
+  SYNTHESIS
+}
+
+enum Status {
+  DRAFT
+  RUNNING
+  PAUSED
+  COMPLETE
+  FAILED
+}
+
+enum Agent {
+  CLARA
+  MILES
+  JAX
+  NINA
+  IVY
+  THEO
+  QUENTIN
+  OMAR
+  BRUCE
+}
+
+enum MessageRole {
+  SYSTEM
+  ANALYSIS
+  SUGGESTION
+}
+
+enum RiskLevel {
+  SAFE
+  BALANCED
+  BOLD
+}
+
+// ===== Models =====
+
+model Client {
+  id        String    @id @default(cuid())
+  name      String
+  notes     String?
+  campaigns Campaign[]
+}
+
+model Campaign {
+  id          String         @id @default(cuid())
+  clientId    String
+  title       String
+  status      CampaignStatus @default(DRAFT)
+  mode        Mode
+  market      String         @default("AU")
+  category    String?
+  score       Int?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  client      Client         @relation(fields: [clientId], references: [id])
+  brief       Brief?
+  phases      PhaseRun[]
+  narrative   Narrative?
+  ideaRoutes  IdeaRoute[]
+  evalDeltas  EvaluationDelta[]
+  shareLinks  ShareLink[]
+
+  @@index([clientId])
+}
+
+model Brief {
+  campaignId String  @id
+  rawText    String
+  parsedJson Json
+  assets     Json
+
+  campaign   Campaign @relation(fields: [campaignId], references: [id])
+}
+
+model PhaseRun {
+  id         String   @id @default(cuid())
+  campaignId String
+  phase      Phase
+  status     Status
+  startedAt  DateTime @default(now())
+  endedAt    DateTime?
+
+  campaign   Campaign @relation(fields: [campaignId], references: [id])
+  messages   AgentMessage[]
+
+  @@index([campaignId])
+  @@index([phase, status])
+}
+
+model AgentMessage {
+  id         String      @id @default(cuid())
+  phaseRunId String
+  agent      Agent
+  role       MessageRole
+  text       String
+  tokenCount Int
+  createdAt  DateTime    @default(now())
+
+  phaseRun   PhaseRun    @relation(fields: [phaseRunId], references: [id])
+
+  @@index([phaseRunId])
+  @@index([agent])
+}
+
+model Narrative {
+  campaignId String   @id
+  draftHtml  String
+  finalHtml  String?
+  score      Int?
+  createdAt  DateTime @default(now())
+
+  campaign   Campaign @relation(fields: [campaignId], references: [id])
+}
+
+model IdeaRoute {
+  id               String     @id @default(cuid())
+  campaignId       String
+  riskLevel        RiskLevel
+  archetype        String
+  mechanic         String
+  prizeLadder      Json
+  hook             String
+  channels         Json
+  feasibilityNotes String
+  complianceNotes  String?
+  hash             String
+
+  campaign         Campaign       @relation(fields: [campaignId], references: [id])
+  evaluationDeltas EvaluationDelta[]
+
+  @@index([campaignId])
+  @@unique([campaignId, hash])
+}
+
+model EvaluationDelta {
+  id            String   @id @default(cuid())
+  campaignId    String
+  nfrRouteId    String
+  dtf           Float
+  bridgeMoves   Json
+  rationaleLine String
+
+  campaign   Campaign @relation(fields: [campaignId], references: [id])
+  nfrRoute   IdeaRoute @relation(fields: [nfrRouteId], references: [id])
+
+  @@index([campaignId])
+  @@index([nfrRouteId])
+}
+
+model Heuristic {
+  id        String   @id @default(cuid())
+  category  String
+  ruleName  String
+  weight    Int
+  bodyText  String
+  embedding String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ShareLink {
+  slug        String   @id
+  campaignId  String
+  expiresAt   DateTime
+  permissions Json
+
+  campaign    Campaign @relation(fields: [campaignId], references: [id])
+
+  @@index([campaignId])
+}

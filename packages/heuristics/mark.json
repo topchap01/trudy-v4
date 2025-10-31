@@ -1,0 +1,100 @@
+{
+  "version": "2025-08-30.a",
+  "marketDefault": "AU",
+  "principles": {
+    "outputFirst": "Every artefact must be board-ready without hand-finishing.",
+    "idempotentRuns": "Re-running phases must not duplicate or drift.",
+    "retailerReality": "Coles/Woolworths/IGA realities beat theory.",
+    "complianceGate": "Quentin’s pass (AU default) is non-negotiable before export."
+  },
+  "framing": {
+    "categoryTruthsChecklist": [
+      "State 3–5 non-generic truths supported by shopper behaviour.",
+      "Name 2–3 audience tensions in the buyer’s words.",
+      "Call the brand’s unfair advantage in one sentence.",
+      "List hard constraints: legal, retailer, budget, ops, timing."
+    ],
+    "successMetrics": {
+      "leading": ["opens/installs", "repeat app actions", "click-to-redeem"],
+      "lagging": ["incremental sales", "retailer ranging/feature", "repeat rate"]
+    }
+  },
+  "create": {
+    "archetypes": [
+      "Collection game",
+      "Instant-win + streaks",
+      "Partner mash-up",
+      "Tiered loyalty ladder",
+      "UGC-with-guardrails",
+      "Geo quest / local legends"
+    ],
+    "mechanicHeuristics": [
+      "If collection → show progress and near-miss nudges.",
+      "If instant-win → ensure believable win cadence + social proof.",
+      "If partner mash-up → the partner must unlock a new behaviour, not just discounts.",
+      "Always include a habit-forming loop (cue → action → reward → variable reward)."
+    ],
+    "hookRules": [
+      "One-sentence consumer promise; no internal jargon.",
+      "Name the ‘why now’—timebox or scarcity.",
+      "Show the prize ladder logic (lots of small wins, few hero wins)."
+    ],
+    "channelDefaults": [
+      "Own app/web first; retailer app tiles; POS where feasible; email/SMS cadence tied to mechanic moments."
+    ]
+  },
+  "evaluate": {
+    "pressureTestGrid": {
+      "works": "What is provably strong given constraints?",
+      "breaks": "What collides with legal/ops/retailer/timing?",
+      "bridges": "2–4 concrete moves: owner, cost, timeline."
+    },
+    "riskProfile": ["legal", "ops", "brand", "retailer"],
+    "retailerFitExamples": [
+      "Coles: Flybuys leverage, clean POS, measurable uplift.",
+      "Woolworths: Everyday Rewards tie-in, family-safe UGC.",
+      "IGA: community angle, local legend assets, simpler ops."
+    ],
+    "scoringAnchors": {
+      "behaviourChange": ["0 none", "3 episodic", "5 habit-forming"],
+      "retailerFit": ["0 unlikely to list", "3 workable", "5 tailor-made"],
+      "risk": ["0 blocked", "3 manageable with caveats", "5 near-zero"],
+      "talkValue": ["0 invisible", "3 social nudge", "5 PR magnet"],
+      "hookClarity": ["0 muddled", "3 clear", "5 instant ‘get’"]
+    }
+  },
+  "synthesis": {
+    "narrativeBones": [
+      "Open with the problem in the buyer’s language.",
+      "Name Bruce’s Choice (one route) and why it wins.",
+      "Show Route Tiles (name, hook, how it works, value exchange).",
+      "Next 10 days: owners, milestones, decision gates."
+    ],
+    "killRules": [
+      "No choice made → reject.",
+      "No bridge moves → reject.",
+      "No retailer fit evidence → hold."
+    ]
+  },
+  "ask": {
+    "briefThemes": ["Target", "Timing", "Mechanic", "Budget", "Constraints", "Retailers"],
+    "outputsActions": ["hooks", "ideas", "mechanics", "prizeLadder", "riskProfile", "retailerDeck", "compliance", "refineHook", "headlineRun"],
+    "questionStyle": "Polite, surgical, one fact per question, explain why we ask."
+  },
+  "complianceAU": {
+    "alcohol": [
+      "ABAC: no minors, no depict unsafe/rapid consumption, placement rules.",
+      "Age gating on all digital touchpoints.",
+      "State permits for trade promotion lotteries where required."
+    ],
+    "general": [
+      "Clear T&Cs, prize source of truth, draw and notification procedures.",
+      "UGC moderation, profanity filters, take-down process."
+    ]
+  },
+  "spectacularness": [
+    "Distinctive Aussie wink or local legend leverage when appropriate.",
+    "Reciprocal value exchange (customer gives data/behaviour, gets real utility).",
+    "Iconic partner or asset used for a *behavioural* reason, not badge value."
+  ]
+}

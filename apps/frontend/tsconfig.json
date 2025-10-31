@@ -1,0 +1,20 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "allowJs": true,
+    "checkJs": false,
+    "isolatedModules": true,
+    "types": ["vite/client"]
+  },
+  "include": [
+    "src",
+    "vite.config.js",
+    "tailwind.config.cjs",
+    "postcss.config.cjs"
+  ],
+  "exclude": [
+    "dist",
+    "node_modules"
+  ]
+}

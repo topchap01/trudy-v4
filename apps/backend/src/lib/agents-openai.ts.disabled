@@ -1,0 +1,81 @@
+// /apps/backend/src/lib/agents-openai.ts
+/* eslint-disable no-console */
+import 'dotenv/config';
+import {
+  setDefaultModelProvider,
+  type RunConfig,
+  type RunResult,
+  run,
+  Agent,
+} from '@openai/agents';
+import {
+  OpenAIProvider,
+  OpenAIResponsesModel,
+  setDefaultOpenAIKey,
+} from '@openai/agents-openai';
+
+export type ModelTier = 'small' | 'main' | 'top';
+
+const DEFAULTS = {
+  small: process.env.MODEL_SMALL || 'gpt-4o-mini', // alt: 'gpt-4.1-mini'
+  main: process.env.MODEL_MAIN || 'gpt-4o',        // alt: 'gpt-4.1'
+  top: process.env.MODEL_TOP || 'gpt-5',           // fallback to 4o if unavailable
+};
+
+let initialized = false;
+
+/**
+ * Initialize the Agents SDK to use OpenAI as the default provider.
+ * Call once on process boot.
+ */
+export function initAgentsOpenAI() {
+  if (initialized) return;
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) throw new Error('OPENAI_API_KEY not set');
+  setDefaultOpenAIKey(key);
+  setDefaultModelProvider(new OpenAIProvider({ apiKey: key }));
+  initialized = true;
+}
+
+/** Resolve a model id string for a given tier with graceful fallbacks. */
+export function resolveModelId(tier: ModelTier): string {
+  const id = DEFAULTS[tier];
+  if (tier === 'top' && id.toLowerCase().includes('gpt-5') && process.env.ALLOW_GPT5 !== 'true') {
+    // If GPT-5 isn’t allowed/available in this env, fall back to gpt-4o.
+    return DEFAULTS.main;
+  }
+  return id;
+}
+
+/** Construct a Responses API model instance for the given tier. */
+export function modelForTier(tier: ModelTier): OpenAIResponsesModel {
+  return new OpenAIResponsesModel(resolveModelId(tier));
+}
+
+/**
+ * Convenience: pick a model tier by agent name/purpose.
+ * - Clara/Miles/Jax/Nina/Ivy/Theo/Omar => small (fast framing/feasibility/hooks)
+ * - Bruce (ECD) => top (narrative, synthesis)
+ * - Quentin (Legal) => main/top selectable via env
+ */
+export function modelForAgent(agentName: string): OpenAIResponsesModel {
+  const n = agentName.toLowerCase();
+  if (n === 'bruce') return modelForTier('top');
+  if (n === 'quentin') return process.env.QUENTIN_USE_TOP === 'true'
+    ? modelForTier('top')
+    : modelForTier('main');
+  return modelForTier('small');
+}
+
+/**
+ * Execute an agent using Agents SDK run(). Returns the full RunResult<T>.
+ * (Keep this thin so higher layers decide how to read items/finalOutput.)
+ */
+export async function runAgent<T>(
+  agent: Agent<T>,
+  input: unknown,
+  options?: Partial<RunConfig>
+): Promise<RunResult<T>> {
+  initAgentsOpenAI();
+  return run(agent, input, options ?? {});
+}

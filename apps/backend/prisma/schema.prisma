@@ -1,0 +1,279 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Campaign {
+  id              String           @id @default(cuid())
+  clientId        String?
+  clientName      String?
+  title           String
+  status          String
+  mode            String
+  market          String?
+  category        String?
+  score           Float?
+  startDate       DateTime?
+  endDate         DateTime?
+  prompt          String           @default("")
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  brief           Brief?
+  exportArtifacts ExportArtifact[]
+  heuristicScores HeuristicScore[]
+  ideaRoutes      IdeaRoute[]
+  outputs         Output[]
+  phaseRuns       PhaseRun[]
+  campaignMemories CampaignMemory[]
+  llmInsights     LlmInsightLog[]
+}
+
+model Brief {
+  campaignId String   @id
+  rawText    String?
+  parsedJson Json?
+  assets     Json?
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+}
+
+model PhaseRun {
+  id              String           @id @default(cuid())
+  campaignId      String
+  phase           Phase
+  status          RunStatus
+  startedAt       DateTime?        @default(now())
+  endedAt         DateTime?
+  createdAt       DateTime         @default(now())
+  messages        AgentMessage[]
+  exportArtifacts ExportArtifact[]
+  outputs         Output[]
+  campaign        Campaign         @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+  @@index([phase])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model AgentMessage {
+  id         String   @id @default(cuid())
+  phaseRunId String
+  agent      String
+  role       String
+  text       String
+  tokenCount Int      @default(0)
+  createdAt  DateTime @default(now())
+  phaseRun   PhaseRun @relation(fields: [phaseRunId], references: [id], onDelete: Cascade)
+
+  @@index([phaseRunId])
+  @@index([agent])
+  @@index([role])
+  @@index([createdAt])
+}
+
+/// *
+///  * Persist every Ask result (hooks, ideas, retailerDeck, etc.)
+model Output {
+  id         String    @id @default(cuid())
+  campaignId String
+  phaseRunId String?
+  type       String
+  prompt     String    @default("")
+  params     Json?
+  content    String
+  createdAt  DateTime  @default(now())
+  phaseRun   PhaseRun? @relation(fields: [phaseRunId], references: [id])
+  campaign   Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+  @@index([phaseRunId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+/// *
+///  * Export artifacts (HTML/PDF/etc.)
+model ExportArtifact {
+  id         String    @id @default(cuid())
+  campaignId String
+  phaseRunId String?
+  kind       String
+  path       String
+  bytes      Int?
+  createdAt  DateTime  @default(now())
+  phaseRun   PhaseRun? @relation(fields: [phaseRunId], references: [id])
+  campaign   Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+  @@index([phaseRunId])
+  @@index([kind])
+  @@index([createdAt])
+}
+
+/// *
+///  * Idea routes generated/accepted for a campaign
+model IdeaRoute {
+  id              String           @id @default(cuid())
+  campaignId      String
+  archetype       String
+  mechanic        String
+  hook            String
+  riskLevel       String?
+  payload         Json?
+  createdAt       DateTime         @default(now())
+  heuristicScores HeuristicScore[]
+  campaign        Campaign         @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+}
+
+/// *
+///  * NEW: Heuristics scorecards per route (or ad-hoc per campaign)
+model HeuristicScore {
+  id           String     @id @default(cuid())
+  campaignId   String
+  ideaRouteId  String?
+  name         String     @default("scorecard")
+  score        Float
+  breakdown    Json?
+  rationale    String?
+  evidenceJson Json?
+  createdAt    DateTime   @default(now())
+  ideaRoute    IdeaRoute? @relation(fields: [ideaRouteId], references: [id])
+  campaign     Campaign   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+  @@index([ideaRouteId])
+  @@index([name])
+  @@index([createdAt])
+}
+
+/// *
+///  * Enums used by PhaseRun
+enum Phase {
+  FRAMING
+  CREATE
+  EVALUATE
+  SYNTHESIS
+}
+
+enum RunStatus {
+  RUNNING
+  COMPLETE
+  FAILED
+}
+
+model MarketCategoryBenchmark {
+  id                 String   @id @default(cuid())
+  marketCode         String
+  categoryCode       String
+  promoType          String
+  breadthTypical     Int?
+  breadthStrong      Int?
+  cashbackTypicalPct Float?
+  cashbackHighPct    Float?
+  cashbackMaxPct     Float?
+  heroCountTypical   Int?
+  heroCountStrong    Int?
+  cadenceHint        String?
+  frictionHint       String?
+  source             String?
+  confidence         Float?   @default(0.7)
+  metadata           Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([marketCode, categoryCode, promoType])
+}
+
+model CampaignMemory {
+  id              String   @id @default(cuid())
+  campaignId      String
+  marketCode      String
+  categoryCode    String
+  promoType       String
+  briefSnapshot   Json
+  rulesSnapshot   Json
+  offerIqVerdict  Json?
+  strategistNotes Json?
+  evaluationMeta  Json?
+  synthesisMeta   Json?
+  outcomes        Json?
+  createdAt       DateTime @default(now())
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+  @@index([marketCode, categoryCode, promoType])
+  @@index([createdAt])
+}
+
+model FounderNote {
+  id        String   @id @default(cuid())
+  scopeType String
+  scopeId   String
+  author    String
+  headline  String
+  guidance  String
+  weight    Float?   @default(1)
+  tags      Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([scopeType, scopeId])
+  @@index([author])
+}
+
+model PlaybookSnippet {
+  id         String   @id @default(cuid())
+  promoType  String
+  useCase    String
+  tone       String
+  body       String
+  source     String?
+  confidence Float?   @default(0.7)
+  metadata   Json?
+  updatedAt  DateTime @updatedAt
+  createdAt  DateTime @default(now())
+
+  @@index([promoType, useCase])
+}
+
+model FounderNote {
+  id        String   @id @default(cuid())
+  scopeType String
+  scopeId   String
+  author    String
+  headline  String
+  guidance  String
+  weight    Float?   @default(1)
+  tags      Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([scopeType, scopeId])
+  @@index([author])
+}
+
+model LlmInsightLog {
+  id          String   @id @default(cuid())
+  campaignId  String?
+  marketCode  String
+  categoryCode String
+  promoType   String
+  intent      String
+  payload     Json
+  prompt      String
+  model       String
+  confidence  Float?   @default(0.5)
+  createdAt   DateTime @default(now())
+
+  campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@index([campaignId])
+  @@index([marketCode, categoryCode, promoType, intent])
+}

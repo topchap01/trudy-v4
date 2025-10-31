@@ -1,0 +1,157 @@
+// /apps/backend/src/orchestrator/agents.ts
+import { z } from 'zod';
+import {
+  Agent,
+  system,
+  user,
+  type AgentOptions,
+  defineOutputGuardrail,
+} from '@openai/agents';
+import { modelForAgent } from '../lib/agents-openai.js';
+
+// Import system prompts (adjust path alias if your repo uses tsconfig paths)
+import {
+  CLARA_SYSTEM,
+  MILES_SYSTEM,
+  JAX_SYSTEM,
+  NINA_SYSTEM,
+  IVY_SYSTEM,
+  THEO_SYSTEM,
+  QUENTIN_SYSTEM,
+  OMAR_SYSTEM,
+  BRUCE_SYSTEM,
+} from '../../../../packages/prompts/index.js';
+
+/** ---------- Shared Schemas ---------- **/
+
+export const FramingSchema = z.object({
+  category: z.string().min(1),
+  market: z.string().optional(),
+  audience: z.object({
+    primary: z.string().min(1),
+    secondary: z.string().optional(),
+    needStates: z.array(z.string()).default([]),
+  }).default({ primary: '' }),
+  tensions: z.array(z.string()).min(1),
+  constraints: z.array(z.string()).default([]),
+  success: z.array(z.string()).default([]), // success signals / KPIs
+  insights: z.array(z.string()).default([]),
+});
+
+export type Framing = z.infer<typeof FramingSchema>;
+
+export const RiskLevelSchema = z.enum(['SAFE', 'BALANCED', 'BOLD']);
+export type RiskLevel = z.infer<typeof RiskLevelSchema>;
+
+export const IdeaRouteSchema = z.object({
+  riskLevel: RiskLevelSchema,
+  archetype: z.string().min(1),
+  mechanic: z.string().min(1),
+  hook: z.string().min(1),
+  prizeLadder: z.union([z.array(z.unknown()), z.record(z.unknown())]),
+  channels: z.union([z.array(z.string()), z.record(z.array(z.string()))]),
+  feasibilityNotes: z.string().min(1),
+  complianceNotes: z.string().optional(),
+  hash: z.string().min(8),
+});
+export type IdeaRoute = z.infer<typeof IdeaRouteSchema>;
+
+export const EvaluationDeltaSchema = z.object({
+  nfrRouteId: z.string().min(1),
+  dtf: z.number().min(0), // distance-to-frontier scalar
+  bridgeMoves: z.array(z.string()).min(2).max(4),
+  rationale: z.string().min(1),
+});
+export type EvaluationDelta = z.infer<typeof EvaluationDeltaSchema>;
+
+/** ---------- Zod Output Adapter (Guardrail) ---------- **/
+
+/**
+ * Enforce that an agent returns **only** JSON matching a Zod schema.
+ * Adds an output guardrail that parses/validates the final text.
+ */
+export function zodJsonOutput<T extends z.ZodTypeAny>(schema: T) {
+  return defineOutputGuardrail({
+    name: 'zod-json-output',
+    description: 'Ensure output is strictly valid JSON matching the provided schema.',
+    async execute({ agentOutput }) {
+      // agentOutput is the text the model produced; try parse -> validate.
+      let parsed: unknown;
+      try {
+        if (typeof agentOutput === 'string') {
+          parsed = JSON.parse(agentOutput);
+        } else {
+          // In some cases Agents SDK may already have parsed JSON:
+          parsed = agentOutput as unknown;
+        }
+        const data = schema.parse(parsed);
+        return {
+          outputInfo: data as z.infer<T>,
+          tripwireTriggered: false,
+        };
+      } catch (err) {
+        return {
+          outputInfo: { error: (err as Error).message },
+          tripwireTriggered: true,
+        };
+      }
+    },
+  });
+}
+
+/**
+ * Compose standard Agent options with model and zod guardrail.
+ */
+function makeAgentOptions<T>(
+  name: string,
+  sysPrompt: string,
+  schema?: z.ZodType<T>
+): AgentOptions<T> {
+  const base: AgentOptions<T> = {
+    name,
+    instructions: [
+      system(`${sysPrompt}\n\nCRITICAL: Respond ONLY with compact JSON, no prose.`),
+    ],
+    model: modelForAgent(name),
+    // Let the guardrail validate the JSON against schema if provided:
+    ...(schema
+      ? { outputGuardrails: [zodJsonOutput(schema)] }
+      : {}),
+  };
+  return base;
+}
+
+/** ---------- Agents ---------- **/
+export const Clara = new Agent<Framing>(makeAgentOptions<Framing>('Clara', CLARA_SYSTEM, FramingSchema));
+export const Miles = new Agent<Framing>(makeAgentOptions<Framing>('Miles', MILES_SYSTEM, FramingSchema));
+
+export const Jax = new Agent<IdeaRoute[]>(
+  makeAgentOptions<IdeaRoute[]>('Jax', JAX_SYSTEM, z.array(IdeaRouteSchema).min(1))
+);
+
+export const Nina = new Agent<IdeaRoute[]>(
+  makeAgentOptions<IdeaRoute[]>('Nina', NINA_SYSTEM, z.array(IdeaRouteSchema).min(1))
+);
+
+export const Ivy = new Agent<IdeaRoute[]>(
+  makeAgentOptions<IdeaRoute[]>('Ivy', IVY_SYSTEM, z.array(IdeaRouteSchema).min(1))
+);
+
+export const Theo = new Agent<IdeaRoute[]>(
+  makeAgentOptions<IdeaRoute[]>('Theo', THEO_SYSTEM, z.array(IdeaRouteSchema).min(1))
+);
+
+export const Quentin = new Agent<IdeaRoute[]>(
+  // Quentin tends to prune/annotate routes for feasibility/compliance
+  makeAgentOptions<IdeaRoute[]>('Quentin', QUENTIN_SYSTEM, z.array(IdeaRouteSchema).min(1))
+);
+
+export const Omar = new Agent<IdeaRoute[]>(
+  makeAgentOptions<IdeaRoute[]>('Omar', OMAR_SYSTEM, z.array(IdeaRouteSchema).min(1))
+);
+
+export const Bruce = new Agent<string>(makeAgentOptions<string>('Bruce', BRUCE_SYSTEM));
+/** We keep Bruce’s output flexible (often long-form HTML). For structured needs, supply schema at call site via a temp evaluator agent or use zodJsonOutput. */
+
+/** Utility to wrap user input consistently. */
+export const userJson = (payload: unknown) => user(JSON.stringify(payload, null, 0));

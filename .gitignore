@@ -1,0 +1,11 @@
+node_modules
+.DS_Store
+*.log
+.env
+.env.*
+apps/backend/.env*
+apps/backend/dev.db
+apps/backend/prisma/dev.db
+apps/backend/prisma/dev.db.bak
+apps/backend/storage/
+apps/backend/dist/
