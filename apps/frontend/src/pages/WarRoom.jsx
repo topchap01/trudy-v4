@@ -134,6 +134,8 @@ export default function WarRoom() {
   const [loadingOpinion, setLoadingOpinion] = useState(false)
   const [loadingStrategist, setLoadingStrategist] = useState(false)
   const [loadingJudge, setLoadingJudge] = useState(false)
+  const [runningAll, setRunningAll] = useState(false)
+  const [runAllStep, setRunAllStep] = useState('')
 
   const [judgeVerdict, setJudgeVerdict] = useState(null)
   const [judgeError, setJudgeError] = useState('')
@@ -434,6 +436,56 @@ export default function WarRoom() {
       setSpecErr(e?.message || 'Failed to save spec')
     } finally {
       setSavingSpec(false)
+    }
+  }
+
+  async function handleRunAllPhases() {
+    if (runningAll) return
+    if (!id) return
+    if (
+      loadingFraming ||
+      loadingEvaluate ||
+      loadingCreate ||
+      loadingSyn ||
+      loadingOpinion ||
+      loadingStrategist ||
+      loadingJudge ||
+      loadingIdeation ||
+      researchTaskLoading
+    ) {
+      setRunAllStep('Finish current runs before starting the full sequence.')
+      return
+    }
+    setRunningAll(true)
+    setRunAllStep('Starting sequence…')
+    const steps = [
+      { label: 'Framing', run: () => doFraming() },
+      { label: 'Evaluation', run: () => doEvaluate() },
+      { label: 'Hooks & Routes', run: () => doCreateRoutes('DISRUPTIVE', 7) },
+      { label: 'Creative Sparks', run: () => doIdeation() },
+      { label: 'Synthesis', run: () => doSynthesis() },
+      { label: 'Opinion', run: () => doOpinion() },
+      { label: 'Strategist', run: () => doStrategist() },
+      { label: 'Judge', run: () => doJudge() },
+    ]
+    let hadError = false
+    try {
+      for (const step of steps) {
+        setRunAllStep(`Running ${step.label}…`)
+        try {
+          await step.run()
+        } catch (err) {
+          hadError = true
+          console.error(`[Run all] ${step.label} failed`, err)
+          setRunAllStep(`${step.label} failed — continuing`)
+        }
+      }
+      setRunAllStep(hadError ? 'Sequence finished with issues — check sections for alerts.' : 'All phases complete.')
+    } catch (err) {
+      console.error('[Run all] sequence aborted', err)
+      setRunAllStep('Sequence aborted — check console for details.')
+    } finally {
+      setRunningAll(false)
     }
   }
 
@@ -856,11 +908,27 @@ export default function WarRoom() {
                   {assuredValue ? <Badge kind="success">Assured value</Badge> : <Badge kind="neutral">Non-assured</Badge>}
                   {verdict ? <VerdictBadge verdict={verdict} /> : null}
                 </div>
-                <div className="mt-3">
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <Button onClick={handleRunAllPhases} loading={runningAll}>
+                    Run all phases
+                  </Button>
                   <Button variant="outline" onClick={() => navigate(`/campaigns/${id}/edit`)}>
                     Edit campaign brief
                   </Button>
                 </div>
+                {runAllStep ? (
+                  <div
+                    className={`mt-2 text-xs ${
+                      runningAll
+                        ? 'text-sky-700'
+                        : /issues|failed|aborted/i.test(runAllStep)
+                          ? 'text-amber-700'
+                          : 'text-gray-600'
+                    }`}
+                  >
+                    {runAllStep}
+                  </div>
+                ) : null}
                 {classification && (
                   <div className="text-xs text-gray-700 mt-1">
                     <span className="mr-2">
@@ -1003,7 +1071,7 @@ export default function WarRoom() {
             />
             <div className="card">
               <div className="mb-3 flex flex-wrap gap-2 items-center">
-                <Button onClick={doFraming} loading={loadingFraming}>Run Framing</Button>
+                <Button onClick={doFraming} loading={loadingFraming} disabled={runningAll}>Run Framing</Button>
                 {framingMeta?.model ? (
                   <div className="text-xs text-gray-500 flex items-center gap-2">
                     <span>Model: {String(framingMeta.model)}</span>
@@ -1035,7 +1103,7 @@ export default function WarRoom() {
             />
             <div className="card space-y-4">
               <div className="flex flex-wrap gap-2 items-center">
-                <Button onClick={doStrategist} loading={loadingStrategist}>Run Strategist</Button>
+                <Button onClick={doStrategist} loading={loadingStrategist} disabled={runningAll}>Run Strategist</Button>
                 <label className="flex items-center gap-2 text-xs text-gray-600">
                   <input
                     type="checkbox"
@@ -1077,7 +1145,7 @@ export default function WarRoom() {
             <div className="grid gap-6 lg:grid-cols-[2fr,1fr]">
               <div className="card">
                 <div className="mb-3 flex flex-wrap gap-2 items-center">
-                  <Button onClick={doEvaluate} loading={loadingEvaluate}>Run Evaluation</Button>
+                  <Button onClick={doEvaluate} loading={loadingEvaluate} disabled={runningAll}>Run Evaluation</Button>
                   {evalMeta && (
                     <div className="text-xs text-gray-500 flex items-center gap-2">
                       <span>Stance: {evalMeta.stance}</span>
@@ -1215,7 +1283,7 @@ export default function WarRoom() {
           />
           <div className="card space-y-4">
             <div className="flex flex-wrap gap-2">
-              <Button onClick={doIdeation} loading={loadingIdeation}>Run Creative Sparks</Button>
+              <Button onClick={doIdeation} loading={loadingIdeation} disabled={runningAll}>Run Creative Sparks</Button>
             </div>
             {ideationError ? (
               <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded p-3">
@@ -1243,9 +1311,29 @@ export default function WarRoom() {
             />
             <div className="card">
               <div className="mb-3 flex flex-wrap gap-2">
-                <Button variant="outline" onClick={() => doCreateRoutes('CONSERVATIVE', 5)} loading={loadingCreate==='CONSERVATIVE'}>Conservative x5</Button>
-                <Button onClick={() => doCreateRoutes('DISRUPTIVE', 7)} loading={loadingCreate==='DISRUPTIVE'}>Disruptive x7</Button>
-                <Button variant="outline" onClick={() => doCreateRoutes('OUTRAGEOUS', 10)} loading={loadingCreate==='OUTRAGEOUS'}>Outrageous x10</Button>
+                <Button
+                  variant="outline"
+                  onClick={() => doCreateRoutes('CONSERVATIVE', 5)}
+                  loading={loadingCreate==='CONSERVATIVE'}
+                  disabled={runningAll}
+                >
+                  Conservative x5
+                </Button>
+                <Button
+                  onClick={() => doCreateRoutes('DISRUPTIVE', 7)}
+                  loading={loadingCreate==='DISRUPTIVE'}
+                  disabled={runningAll}
+                >
+                  Disruptive x7
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => doCreateRoutes('OUTRAGEOUS', 10)}
+                  loading={loadingCreate==='OUTRAGEOUS'}
+                  disabled={runningAll}
+                >
+                  Outrageous x10
+                </Button>
               </div>
               {ideas && (
                 <IdeaRoutes
@@ -1265,7 +1353,7 @@ export default function WarRoom() {
             />
             <div className="card">
               <div className="mb-3 flex gap-2">
-                <Button onClick={doOpinion} loading={loadingOpinion}>Run Opinion (Ava+Clara)</Button>
+                <Button onClick={doOpinion} loading={loadingOpinion} disabled={runningAll}>Run Opinion (Ava+Clara)</Button>
               </div>
               {opinion ? (
                 <RevealBlock markdown text={opinion} />
@@ -1283,15 +1371,15 @@ export default function WarRoom() {
             />
             <div className="card">
               <div className="mb-3 flex gap-2">
-                <Button onClick={doSynthesis} loading={loadingSyn}>Run Synthesis</Button>
+                <Button onClick={doSynthesis} loading={loadingSyn} disabled={runningAll}>Run Synthesis</Button>
               </div>
               {synthesis ? (
                 <RevealBlock markdown text={synthesis} />
-          ) : (
-            <div className="text-sm text-gray-600">No synthesis yet. Click “Run Synthesis”.</div>
-          )}
-        </div>
-      </section>
+              ) : (
+                <div className="text-sm text-gray-600">No synthesis yet. Click “Run Synthesis”.</div>
+              )}
+            </div>
+          </section>
 
       {/* Analyst Desk */}
       <section ref={analystRef} className="mb-10">
@@ -1320,7 +1408,7 @@ export default function WarRoom() {
                     ) : null}
                   </div>
                   <div className="flex gap-2">
-                    <Button onClick={handleResearchTask} loading={researchTaskLoading}>Run Research Task</Button>
+                    <Button onClick={handleResearchTask} loading={researchTaskLoading} disabled={runningAll}>Run Research Task</Button>
                   </div>
                 </div>
                 {researchTaskError ? (
@@ -1491,30 +1579,32 @@ export default function WarRoom() {
       <section ref={judgeRef} className="mb-10">
         <SectionHead
           title="Judge"
-              metaRight={lastRun.judge ? `Last run: ${fmtTime(lastRun.judge)}` : ''}
-            />
-            <div className="card">
-              <div className="mb-3 flex flex-wrap gap-2 items-center">
-                <Button onClick={() => doJudge()} loading={loadingJudge}>Run Judge</Button>
-                <Button
-                  variant="outline"
-                  onClick={() => doJudge({ useLLM: true })}
-                  loading={loadingJudge}
-                  disabled={loadingJudge}
-                >
-                  Run Judge + LLM
-                </Button>
-              </div>
-              {judgeError ? (
-                <div className="text-sm text-red-600 mb-3">{judgeError}</div>
-              ) : null}
-              {judgeVerdict ? (
-                <JudgeVerdictView verdict={judgeVerdict} />
-              ) : (
-                <div className="text-sm text-gray-600">No verdict yet. Run Judge to see QA findings.</div>
-              )}
-            </div>
-          </section>
+          metaRight={lastRun.judge ? `Last run: ${fmtTime(lastRun.judge)}` : ''}
+        />
+        <div className="card">
+          <div className="mb-3 flex flex-wrap gap-2 items-center">
+            <Button onClick={() => doJudge()} loading={loadingJudge} disabled={runningAll}>
+              Run Judge
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => doJudge({ useLLM: true })}
+              loading={loadingJudge}
+              disabled={runningAll || loadingJudge}
+            >
+              Run Judge + LLM
+            </Button>
+          </div>
+          {judgeError ? (
+            <div className="text-sm text-red-600 mb-3">{judgeError}</div>
+          ) : null}
+          {judgeVerdict ? (
+            <JudgeVerdictView verdict={judgeVerdict} />
+          ) : (
+            <div className="text-sm text-gray-600">No verdict yet. Run Judge to see QA findings.</div>
+          )}
+        </div>
+      </section>
 
           {/* Export */}
           <section ref={exportRef} className="mb-10">

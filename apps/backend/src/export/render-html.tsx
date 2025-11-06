@@ -17,6 +17,7 @@ export type RenderOptionsRuntime = {
   theme?: ExportTheme
   judgeVerdict: any
   timestamp?: string
+  mode?: 'BRIEFED' | 'IMPROVE' | 'REBOOT'
 }
 
 export type SummaryModel = {
@@ -120,6 +121,12 @@ export function renderExportHtml(snapshot: SnapshotRich, opts: RenderOptionsRunt
   }
 }
 
+const MODE_LABELS: Record<'BRIEFED' | 'IMPROVE' | 'REBOOT', string> = {
+  BRIEFED: 'Review as briefed',
+  IMPROVE: 'Sharpen with improvements',
+  REBOOT: 'Reboot with alternatives',
+}
+
 function buildSummaryModel(snapshot: SnapshotRich, opts: RenderOptionsRuntime): SummaryModel {
   const brand = preferredBrand(snapshot.context) || snapshot.campaign.clientName || snapshot.campaign.title
   const documentTitle = `${brand} — ${snapshot.campaign.title}`
@@ -128,6 +135,7 @@ function buildSummaryModel(snapshot: SnapshotRich, opts: RenderOptionsRuntime): 
   const chips: string[] = []
   if (opts.judgeVerdict?.score != null) chips.push(`Judge ${opts.judgeVerdict.score}/100`)
   if (snapshot.offerIQ?.verdict) chips.push(`OfferIQ ${snapshot.offerIQ.verdict}`)
+  if (opts.mode && MODE_LABELS[opts.mode]) chips.push(MODE_LABELS[opts.mode])
 
   const sections = buildSections(snapshot, opts)
   const rider = extractSynthesisRider(snapshot.narratives.synthesis?.raw || '')
@@ -152,6 +160,16 @@ function buildSummaryModel(snapshot: SnapshotRich, opts: RenderOptionsRuntime): 
 }
 
 function buildSections(snapshot: SnapshotRich, opts: RenderOptionsRuntime) {
+  if (opts.mode && MODE_LABELS[opts.mode]) {
+    return [
+      {
+        id: 'one-pager',
+        title: MODE_LABELS[opts.mode],
+        html: renderOnePager(snapshot, opts),
+      },
+    ]
+  }
+
   const sections: Array<{ id: string; title: string; html: string }> = []
   const add = (id: string, title: string, html: string) => {
     if (!html) return
@@ -170,6 +188,508 @@ function buildSections(snapshot: SnapshotRich, opts: RenderOptionsRuntime) {
 function renderBriefSection(snapshot: SnapshotRich) {
   const html = snapshot.brief?.snapshot ? markdownToHtml(snapshot.brief.snapshot) : '<p>No brief snapshot saved.</p>'
   return html
+}
+
+function renderOnePager(snapshot: SnapshotRich, opts: RenderOptionsRuntime) {
+  const ctx = buildLensContext(snapshot, opts)
+  if (!opts.mode || opts.mode === 'BRIEFED') {
+    return renderReviewAsBriefed(ctx)
+  }
+  if (opts.mode === 'IMPROVE') {
+    return renderSharpenWithImprovements(ctx)
+  }
+  if (opts.mode === 'REBOOT') {
+    return renderRebootWithAlternatives(ctx)
+  }
+  return renderReviewAsBriefed(ctx)
+}
+
+type ScoreEntry = {
+  label: string
+  status: string
+  why: string
+  fix: string
+}
+
+type LensContext = {
+  brand: string
+  campaign: string
+  category: string
+  briefHook: string
+  shopperTension: string
+  brandTruth: string
+  retailerReality: string
+  measurement: string
+  verdict: string
+  offerIq: string | null
+  judgeScore: number | null
+  judgeVerdict: string | null
+  judgeFlags: string[]
+  scoreboard: ScoreEntry[]
+  positives: string[]
+  watchouts: string[]
+  fixes: string[]
+  runAgainMoves: string[]
+  strategistHighlights: string[]
+  founderNotes: string[]
+  researchSignals: string[]
+  harness: any
+  harnessPoint: string
+  harnessMove: string
+  harnessRetailerLine: string
+  harnessOdds: string
+  harnessLegal: string
+  altHooks: string[]
+  altIdeasDetailed: { hook: string; agent?: string; tier?: string; what?: string }[]
+  guardrails: string[]
+}
+
+function buildLensContext(snapshot: SnapshotRich, opts: RenderOptionsRuntime): LensContext {
+  const spec: Record<string, any> = snapshot.context?.briefSpec || {}
+  const brand = preferredBrand(snapshot.context) || snapshot.campaign.clientName || snapshot.campaign.title || ''
+  const campaign = snapshot.campaign.title || 'Campaign'
+  const category = snapshot.context.category || snapshot.context.briefSpec?.category || ''
+  const dossier = snapshot.research?.dossier || {}
+  const firstNonEmpty = (...candidates: any[]) => {
+    for (const candidate of candidates) {
+      const text = cleanText(candidate)
+      if (text) return text
+    }
+    return ''
+  }
+  const firstText = (arr?: Array<{ text?: string }>) =>
+    Array.isArray(arr) && arr.length ? String(arr[0]?.text || '').trim() : ''
+  const shopperTensionRaw =
+    firstText(dossier.shopperTensions) ||
+    firstText(snapshot.research?.audience?.facts) ||
+    snapshot.narratives.evaluation?.hookWhy ||
+    ''
+  const brandTruthRaw =
+    firstText(dossier.brandTruths) ||
+    firstText(snapshot.research?.brand?.facts) ||
+    ''
+  const retailerRealityRaw =
+    firstText(dossier.retailerReality) ||
+    firstText(snapshot.research?.retailers?.facts) ||
+    ''
+  const measurementRaw =
+    snapshot.narratives.evaluation?.meta?.ui?.measurement ||
+    snapshot.narratives.evaluation?.meta?.measurement ||
+    snapshot.narratives.evaluation?.meta?.scoreboard?.measurement ||
+    ''
+  const briefHookRaw = firstNonEmpty(
+    spec?.mechanicOneLiner,
+    spec?.hook,
+    spec?.promotionHeadline,
+    spec?.entryMechanic,
+    spec?.proposition,
+    spec?.campaignHeadline,
+    spec?.mechanic,
+    snapshot.narratives.framing?.sanitized?.split('\n')?.[0],
+    Array.isArray(snapshot.hooksTop) && snapshot.hooksTop.length ? snapshot.hooksTop[0] : '',
+    snapshot.ideation?.harness?.selectedHook
+  )
+  const shopperTension = cleanText(shopperTensionRaw)
+  const brandTruth = cleanText(brandTruthRaw)
+  const retailerReality = cleanText(retailerRealityRaw)
+  const measurement = cleanText(measurementRaw)
+  const briefHook = cleanText(briefHookRaw)
+
+  const scoreboardRaw = snapshot.narratives.evaluation?.meta?.scoreboard || snapshot.evaluationMeta?.scoreboard || null
+  const scoreboardEntries = extractScoreboardEntries(scoreboardRaw)
+  const positives = scoreboardEntries
+    .filter((entry) => isPositiveStatus(entry.status) && entry.why)
+    .map((entry) => {
+      const why = cleanText(entry.why)
+      return why ? `${entry.label}: ${why}` : ''
+    })
+    .filter(Boolean)
+  const watchouts = scoreboardEntries
+    .filter((entry) => !isPositiveStatus(entry.status))
+    .map((entry) => {
+      const reason = cleanText(entry.why) || cleanText(entry.fix) || 'Needs attention'
+      return reason ? `${entry.label}: ${reason}` : ''
+    })
+    .filter(Boolean)
+  const fixes = scoreboardEntries
+    .filter((entry) => !isPositiveStatus(entry.status) && entry.fix)
+    .map((entry) => {
+      const fix = cleanText(entry.fix)
+      return fix ? `${entry.label}: ${fix}` : ''
+    })
+    .filter(Boolean)
+
+  const runAgainMoves = Array.isArray(snapshot.narratives.evaluation?.runAgainMoves)
+    ? snapshot.narratives.evaluation?.runAgainMoves.filter(Boolean).map(cleanText)
+    : []
+  const runAgainMovesFiltered = filterBrandAligned(runAgainMoves, brand)
+
+  const judgeScore = typeof opts.judgeVerdict?.score === 'number' ? Number(opts.judgeVerdict.score) : null
+  const judgeVerdict = opts.judgeVerdict?.verdict ? String(opts.judgeVerdict.verdict) : null
+  const judgeFlags = Array.isArray(opts.judgeVerdict?.flags)
+    ? opts.judgeVerdict.flags
+        .map((flag: any) => cleanText(String(flag?.message || flag?.code || flag || '')))
+        .filter(Boolean)
+    : []
+
+  const strategistHighlights = extractSentences(snapshot.narratives.strategist?.sanitized || '', 3)
+  const founderNotes =
+    Array.isArray(snapshot.framingMeta?.rules?.founder?.notes) && snapshot.framingMeta?.rules?.founder?.notes.length
+      ? snapshot.framingMeta?.rules?.founder?.notes.map((note: string) => cleanText(note)).slice(0, 4)
+      : []
+
+  const researchSignals = collectResearchSignals(snapshot).slice(0, 4)
+
+  const harness = snapshot.ideation?.harness || null
+  const harnessPoint = cleanText(harness?.point || '')
+  const harnessMove = cleanText(harness?.move || '')
+  const harnessRetailerLine = cleanText(harness?.retailerLine || '')
+  const harnessOdds = cleanText(harness?.oddsCadence || '')
+  const harnessLegal = cleanText(harness?.legalVariant || '')
+  const altHooksRaw = Array.isArray(snapshot.hooksTop) ? snapshot.hooksTop.map(cleanText).slice(0, 6) : []
+  const altHooks = filterBrandAligned(altHooksRaw, brand).slice(0, 4)
+  const altIdeasDetailed = Array.isArray(snapshot.ideation?.unboxed)
+    ? snapshot.ideation?.unboxed.flatMap((agent) => {
+        const agentName = agent?.agent || ''
+        return (agent?.ideas || []).slice(0, 2).map((idea: any) => ({
+          hook: cleanText(idea?.hook || ''),
+          agent: cleanText(agentName),
+          tier: cleanText(String(idea?.tier || '')),
+          what: cleanText(idea?.what || ''),
+        }))
+      }).filter((idea) => idea.hook).slice(0, 4)
+    : []
+
+  const offerIqVerdict = snapshot.offerIQ?.verdict ? String(snapshot.offerIQ.verdict) : null
+  const evalVerdict =
+    snapshot.narratives.evaluation?.meta?.ui?.verdict ||
+    snapshot.narratives.evaluation?.meta?.decision ||
+    snapshot.narratives.evaluation?.meta?.verdict ||
+    ''
+
+  const guardrails = collectGuardrails(snapshot, opts)
+
+  return {
+    brand,
+    campaign,
+    category,
+    briefHook,
+    shopperTension,
+    brandTruth,
+    retailerReality,
+    measurement,
+    verdict: cleanText(evalVerdict),
+    offerIq: offerIqVerdict ? cleanText(offerIqVerdict) : null,
+    judgeScore,
+    judgeVerdict: judgeVerdict ? cleanText(judgeVerdict) : null,
+    judgeFlags: judgeFlags.map(cleanText),
+    scoreboard: scoreboardEntries,
+    positives,
+    watchouts,
+    fixes,
+    runAgainMoves: runAgainMovesFiltered,
+    strategistHighlights,
+    founderNotes,
+    researchSignals,
+    harness,
+    harnessPoint,
+    harnessMove,
+    harnessRetailerLine,
+    harnessOdds,
+    harnessLegal,
+    altHooks,
+    altIdeasDetailed,
+    guardrails,
+  }
+}
+
+function renderReviewAsBriefed(ctx: LensContext) {
+  const parts: string[] = []
+  parts.push(
+    `<p>${escapeHtml(
+      [
+        `We read ${ctx.brand}'s "${ctx.campaign}" exactly as briefed.`,
+        ctx.shopperTension ? `The shopper tension is ${ctx.shopperTension}.` : '',
+        ctx.briefHook ? `The promise on paper is ${ctx.briefHook}.` : '',
+        ctx.brandTruth ? `The brand truth in play is ${ctx.brandTruth}.` : '',
+      ]
+        .filter(Boolean)
+        .join(' ')
+    )}</p>`
+  )
+
+  parts.push(renderListSection('What works', ctx.positives))
+  const strengths: string[] = []
+  if (ctx.offerIq) strengths.push(`OfferIQ verdict: ${ctx.offerIq}`)
+  if (ctx.retailerReality) strengths.push(`Retail reality observed: ${ctx.retailerReality}`)
+  if (ctx.brandTruth) strengths.push(`Brand proof: ${ctx.brandTruth}`)
+  if (ctx.researchSignals.length) strengths.push(`Category signal: ${ctx.researchSignals[0]}`)
+  if (strengths.length) parts.push(renderListSection('Proof points', strengths))
+
+  const watchouts = [
+    ...ctx.watchouts,
+    ...ctx.judgeFlags.slice(0, 3),
+    ctx.measurement ? `Measurement focus: ${ctx.measurement}` : '',
+  ].filter(Boolean)
+  parts.push(renderListSection('Where it breaks', watchouts))
+
+  if (ctx.runAgainMoves.length) {
+    parts.push(renderListSection('Fix on next iteration', ctx.runAgainMoves.slice(0, 4)))
+  } else if (ctx.fixes.length) {
+    parts.push(renderListSection('Fix on next iteration', ctx.fixes.slice(0, 4)))
+  }
+
+  const decisionLines: string[] = []
+  if (ctx.verdict) decisionLines.push(`Evaluation verdict: ${ctx.verdict}`)
+  if (ctx.judgeScore != null) decisionLines.push(`Judge score ${ctx.judgeScore}/100`)
+  if (ctx.judgeVerdict) decisionLines.push(`Governance: ${ctx.judgeVerdict}`)
+  parts.push(renderListSection('Decision snapshot', decisionLines))
+
+  return parts.filter(Boolean).join('')
+}
+
+function renderSharpenWithImprovements(ctx: LensContext) {
+  const parts: string[] = []
+  parts.push(
+    `<p>${escapeHtml(
+      [
+        `We keep ${ctx.brand}'s "${ctx.campaign}" intact but sharpen it for launch.`,
+        ctx.briefHook ? `Anchor hook: ${ctx.briefHook}.` : '',
+        ctx.shopperTension ? `Tension we're solving: ${ctx.shopperTension}.` : '',
+      ]
+        .filter(Boolean)
+        .join(' ')
+    )}</p>`
+  )
+
+  const keepers = [
+    ...ctx.positives.slice(0, 4),
+    ctx.brandTruth ? `Hold onto the brand proof: ${ctx.brandTruth}` : '',
+  ].filter(Boolean)
+  parts.push(renderListSection('Keep and amplify', keepers))
+
+  const upgrades = [
+    ...ctx.runAgainMoves.slice(0, 4),
+    ...ctx.fixes.slice(0, 4),
+    ctx.measurement ? `Reset success measure to ${ctx.measurement}` : '',
+  ].filter(Boolean)
+  parts.push(renderListSection('Upgrade now', dedupeStrings(upgrades).slice(0, 5)))
+
+  const experiments = [
+    ...ctx.strategistHighlights.slice(0, 3),
+    ...ctx.altHooks.slice(0, 2).map((hook) => `Optional hook variant: ${hook}`),
+  ].filter(Boolean)
+  parts.push(renderListSection('Experiments and theatre', dedupeStrings(experiments)))
+
+  const guardrails = [
+    ...ctx.guardrails,
+    ...ctx.founderNotes.slice(0, 3),
+    ...ctx.judgeFlags.filter((flag) => flag.toLowerCase().includes('legal') || flag.toLowerCase().includes('compliance')),
+  ].filter(Boolean)
+  parts.push(renderListSection('Guardrails', dedupeStrings(guardrails)))
+
+  return parts.filter(Boolean).join('')
+}
+
+function renderRebootWithAlternatives(ctx: LensContext) {
+  const parts: string[] = []
+  const diagnosis = [
+    ctx.watchouts[0] ? `Stall point: ${ctx.watchouts[0]}` : '',
+    ctx.shopperTension ? `Tension unresolved: ${ctx.shopperTension}` : '',
+    ctx.judgeFlags[0] ? `Governance concern: ${ctx.judgeFlags[0]}` : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+  parts.push(`<p>${escapeHtml(diagnosis || `The briefed route needs a stronger hook to earn attention in this aisle.`)}</p>`)
+
+  const newHook = ctx.altHooks[0] || ctx.altIdeasDetailed[0]?.hook || ctx.briefHook
+  const alternativeLines: string[] = []
+  if (newHook) alternativeLines.push(`New hero hook: ${newHook}`)
+  if (ctx.harnessPoint) alternativeLines.push(`Position it as ${ctx.harnessPoint}`)
+  if (ctx.harnessMove) alternativeLines.push(`Lead move: ${ctx.harnessMove}`)
+  if (ctx.harnessRetailerLine) alternativeLines.push(`Retail shorthand: ${ctx.harnessRetailerLine}`)
+  if (ctx.harnessLegal) alternativeLines.push(`Legal variant: ${ctx.harnessLegal}`)
+  parts.push(renderListSection('Replacement narrative', alternativeLines))
+
+  const routes = ctx.altIdeasDetailed.slice(0, 3).map((idea) => {
+    const details = []
+    if (idea.what) details.push(idea.what)
+    if (idea.agent) details.push(`Agent ${idea.agent}`)
+    if (idea.tier) details.push(`Tier ${idea.tier}`)
+    return `${idea.hook}${details.length ? ` — ${details.join(' · ')}` : ''}`
+  })
+  parts.push(renderListSection('Routes to develop', dedupeStrings(routes)))
+
+  const proof = [
+    ctx.researchSignals[0] ? `Research: ${ctx.researchSignals[0]}` : '',
+    ctx.researchSignals[1] ? `Market signal: ${ctx.researchSignals[1]}` : '',
+    ctx.offerIq ? `OfferIQ: ${ctx.offerIq}` : '',
+    ctx.measurement ? `Success metric: ${ctx.measurement}` : '',
+  ].filter(Boolean)
+  parts.push(renderListSection('Why this wins', dedupeStrings(proof)))
+
+  const nextSteps = [
+    ctx.guardrails[0],
+    ctx.judgeFlags.find((flag) => flag.toLowerCase().includes('approval')),
+    ctx.founderNotes[0],
+  ].filter(Boolean)
+  parts.push(renderListSection('Next steps to unlock', dedupeStrings(nextSteps)))
+
+  return parts.filter(Boolean).join('')
+}
+
+function renderListSection(title: string, items: string[]) {
+  const filtered = items.filter(Boolean)
+  if (!filtered.length) return ''
+  return `<div class="lens-section">
+    <h3>${escapeHtml(title)}</h3>
+    <ul>${filtered.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+  </div>`
+}
+
+function cleanText(value: string) {
+  const raw = String(value || '')
+  const withoutWhitespace = raw.replace(/\s+/g, ' ').trim()
+  if (!withoutWhitespace) return ''
+  if (/^[A-Z0-9_ -]+$/.test(withoutWhitespace) && withoutWhitespace === withoutWhitespace.toUpperCase()) {
+    return ''
+  }
+  return withoutWhitespace
+}
+
+function dedupeStrings(items: string[]) {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const item of items) {
+    const key = item.toLowerCase()
+    if (item && !seen.has(key)) {
+      seen.add(key)
+      out.push(item)
+    }
+  }
+  return out
+}
+
+function extractScoreboardEntries(board: any): ScoreEntry[] {
+  if (!board || typeof board !== 'object') return []
+  return Object.entries(board)
+    .filter(([key]) => !['decision', 'conditions', 'measurement'].includes(key))
+    .map(([key, value]) => ({
+      label: prettifyScoreboardKey(key),
+      status: String(value?.status || 'NA').toUpperCase(),
+      why: cleanText(value?.why || ''),
+      fix: cleanText(value?.fix || value?.improve || ''),
+    }))
+    .filter((entry) => entry.label)
+}
+
+function isPositiveStatus(status: string) {
+  const good = new Set(['GREEN', 'POSITIVE', 'GOOD', 'STRONG', 'BLUE'])
+  return good.has(String(status || '').toUpperCase())
+}
+
+function extractSentences(text: string, limit: number) {
+  if (!text) return []
+  const sentences = text
+    .split(/[\r\n]+/)
+    .map((line) => line.replace(/^\s*[-*•]+\s*/, '').trim())
+    .filter(Boolean)
+  const out: string[] = []
+  for (const sentence of sentences) {
+    if (!sentence) continue
+    out.push(cleanText(sentence))
+    if (out.length >= limit) break
+  }
+  return out
+}
+
+function collectResearchSignals(snapshot: SnapshotRich): string[] {
+  const signals: string[] = []
+  const dossier = snapshot.research?.dossier || {}
+  const pushTexts = (arr?: Array<{ text?: string }>, prefix?: string) => {
+    if (!Array.isArray(arr)) return
+    arr.forEach((entry) => {
+      const text = cleanText(entry?.text || '')
+      if (text) signals.push(prefix ? `${prefix}: ${text}` : text)
+    })
+  }
+  pushTexts(dossier.shopperTensions, 'Shopper tension')
+  pushTexts(dossier.categorySignals, 'Category signal')
+  pushTexts(dossier.competitorMoves, 'Competitor move')
+  pushTexts(dossier.brandTruths, 'Brand truth')
+  pushTexts(dossier.retailerReality, 'Retail reality')
+  if (!signals.length && Array.isArray(snapshot.research?.audience?.facts)) {
+    snapshot.research.audience.facts.forEach((fact: any) => {
+      const text = cleanText(fact?.claim || fact || '')
+      if (text) signals.push(text)
+    })
+  }
+  return dedupeStrings(signals)
+}
+
+function collectGuardrails(snapshot: SnapshotRich, opts: RenderOptionsRuntime): string[] {
+  const lines: string[] = []
+  const conditions =
+    cleanText(
+      snapshot.narratives.evaluation?.meta?.scoreboard?.conditions ||
+        snapshot.narratives.evaluation?.meta?.conditions ||
+        ''
+    ) ||
+    ''
+  if (conditions) lines.push(conditions)
+  const prohibitions = snapshot.framingMeta?.handoff?.prohibitions
+  if (Array.isArray(prohibitions)) {
+    prohibitions.slice(0, 3).forEach((item: any) => {
+      const text = cleanText(String(item || ''))
+      if (text) lines.push(`Framing handoff: ${text}`)
+    })
+  }
+  if (Array.isArray(opts.judgeVerdict?.flags)) {
+    opts.judgeVerdict.flags.forEach((flag: any) => {
+      const severity = String(flag?.severity || '').toUpperCase()
+      if (severity === 'BLOCKER') {
+        const message = cleanText(flag?.message || flag?.code || '')
+        if (message) lines.push(`Blocker: ${message}`)
+      }
+    })
+  }
+  return dedupeStrings(lines).slice(0, 5)
+}
+
+const BRAND_SAFE_TOKENS = new Set([
+  'OfferIQ',
+  'POS',
+  'KPI',
+  'RSA',
+  'ABAC',
+  'LLM',
+  'GWP',
+  'ROI',
+  'SKU',
+  'CRM',
+  'SMS',
+  'QR',
+  'VIP',
+  'NFC',
+  'URL',
+  'CTA',
+])
+
+function filterBrandAligned(items: string[], brand: string): string[] {
+  if (!brand) return items
+  const brandLower = brand.toLowerCase()
+  return items.filter((item) => {
+    const text = item || ''
+    const matches = text.match(/\b[A-Z][A-Za-z0-9&]+\b/g)
+    if (!matches) return true
+    return matches.every((token) => {
+      if (BRAND_SAFE_TOKENS.has(token)) return true
+      const tokenLower = token.toLowerCase()
+      if (tokenLower === brandLower) return true
+      if (tokenLower.length <= 2) return true
+      return false
+    })
+  })
 }
 
 function renderResearchSection(snapshot: SnapshotRich) {
@@ -896,7 +1416,7 @@ function buildHtmlDocument(model: SummaryModel) {
         )
         .join('')}
     </div>
-    <p class="controls-panel__note">Untick any sections you don’t need. Hidden sections disappear from the contents page and the final PDF.</p>
+    <p class="controls-panel__note">Untick any sections you don't need. Hidden sections disappear from the contents page and the final PDF.</p>
   </div>
 </section>`
     : ''

@@ -48,6 +48,9 @@ router.post('/campaigns/:id/exports', async (req, res, next) => {
     const theme = body.theme || {}
     const requirePass = body.requirePass === true
     const useLLM = (body.useLLMJudge ?? (process.env.JUDGE_LLM_DEFAULT === '1')) === true
+    const mode = (['BRIEFED', 'IMPROVE', 'REBOOT'] as const).includes(body.mode as any)
+      ? body.mode
+      : null
 
     const snapshot = await collectExportSnapshot(req.params.id, sections)
 
@@ -69,6 +72,7 @@ router.post('/campaigns/:id/exports', async (req, res, next) => {
       theme,
       judgeVerdict,
       timestamp,
+      mode: mode ?? undefined,
     })
 
     if (model.governance.blockers.length) {

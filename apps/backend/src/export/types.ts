@@ -36,6 +36,7 @@ export type ExportOptions = {
   theme?: ExportTheme
   persona?: 'FULL' | 'EXEC' | 'TRADE'
   includeTooltips?: boolean
+  mode?: 'BRIEFED' | 'IMPROVE' | 'REBOOT' | null
 }
 
 export type NarrativeBlock = {
