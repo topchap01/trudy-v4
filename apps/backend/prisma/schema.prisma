@@ -181,6 +181,12 @@ model MarketCategoryBenchmark {
   heroCountStrong    Int?
   cadenceHint        String?
   frictionHint       String?
+  winnersPerDayTypical Float?
+  winnersPerDayStrong  Float?
+  frequencyFrame       String?
+  topPrizeSweetSpot    Int?
+  prizeTierGuidance    Json?
+  progressCueScore     Float?
   source             String?
   confidence         Float?   @default(0.7)
   metadata           Json?
@@ -210,22 +216,6 @@ model CampaignMemory {
   @@index([campaignId])
   @@index([marketCode, categoryCode, promoType])
   @@index([createdAt])
-}
-
-model FounderNote {
-  id        String   @id @default(cuid())
-  scopeType String
-  scopeId   String
-  author    String
-  headline  String
-  guidance  String
-  weight    Float?   @default(1)
-  tags      Json?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([scopeType, scopeId])
-  @@index([author])
 }
 
 model PlaybookSnippet {

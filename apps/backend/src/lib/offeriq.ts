@@ -73,15 +73,25 @@ function categoryDefaults(category: string) {
   return { aspFallback: 100, absoluteFloor: 10, percentFloor: 5 }
 }
 
+export function resolveAspAnchor(ctx: CampaignContext): number {
+  const b: any = ctx.briefSpec || {}
+  return (
+    asNum(b.avgPrice) ||
+    asNum(b.averageSellingPrice) ||
+    (b.categoryBenchmarks && asNum(b.categoryBenchmarks?.avgPrice)) ||
+    categoryDefaults(ctx.category || '').aspFallback
+  )
+}
+
 /* ---------- Banded cashback helpers ---------- */
-type Band = {
+export type CashbackBand = {
   minPrice?: number | null
   maxPrice?: number | null
   amount?: number | null       // absolute $
   percent?: number | null      // % of price
 }
 
-function normaliseBands(bands: any[]): Band[] {
+function normaliseBands(bands: any[]): CashbackBand[] {
   if (!Array.isArray(bands)) return []
   return bands.map((b) => ({
     minPrice: (b?.minPrice == null ? null : asNum(b.minPrice)),
@@ -93,7 +103,7 @@ function normaliseBands(bands: any[]): Band[] {
 }
 
 /** Find the band that applies near ASP (prefers the band that actually spans ASP). */
-function bandForASP(bands: Band[], asp: number): Band | null {
+function bandForASP(bands: CashbackBand[], asp: number): CashbackBand | null {
   if (!bands.length) return null
   const match = bands.find(b =>
     (b.minPrice == null || asp >= (b.minPrice || 0)) &&
@@ -107,14 +117,14 @@ function bandForASP(bands: Band[], asp: number): Band | null {
   return bands[0]
 }
 
-function amountFromBandAtASP(b: Band, asp: number): number {
+function amountFromBandAtASP(b: CashbackBand, asp: number): number {
   if (!b) return 0
   if (b.amount != null && b.amount > 0) return b.amount
   if (b.percent != null && b.percent > 0) return (b.percent / 100) * asp
   return 0
 }
 
-function headlineMaxFromBands(bands: Band[], asp: number): number {
+function headlineMaxFromBands(bands: CashbackBand[], asp: number): number {
   if (!bands.length) return 0
   let maxAbs = 0
   for (const b of bands) {
@@ -124,6 +134,32 @@ function headlineMaxFromBands(bands: Band[], asp: number): number {
     if (abs > maxAbs) maxAbs = abs
   }
   return maxAbs
+}
+
+export function deriveCashbackValue(
+  cashback: any,
+  asp: number
+): {
+  bands: CashbackBand[]
+  banded: boolean
+  representative: number
+  headlineMax: number
+  percentValue: number | null
+} {
+  const bands = normaliseBands(Array.isArray(cashback?.bands) ? cashback.bands : [])
+  const banded = bands.length > 0
+  const singleAmount = asNum(cashback?.amount)
+  const percent = asNum(cashback?.percent)
+  const percentAmount = percent > 0 ? (percent / 100) * asp : 0
+  const baseSingle = singleAmount || percentAmount
+  let representative = baseSingle
+  if (banded) {
+    const band = bandForASP(bands, asp)
+    representative = band ? amountFromBandAtASP(band, asp) : baseSingle
+  }
+  const headlineMax = banded ? headlineMaxFromBands(bands, asp) : baseSingle
+  const percentValue = percent > 0 ? percent : null
+  return { bands, banded, representative, headlineMax, percentValue }
 }
 
 /* ---------- Research access (non-fatal if absent) ---------- */
@@ -147,25 +183,10 @@ function extract(ctx: CampaignContext) {
   const gwp = b.gwp || null
 
   // ASP anchor (best available, else category fallback)
-  const asp =
-    asNum(b.avgPrice) ||
-    asNum(b.averageSellingPrice) ||
-    (b.categoryBenchmarks && asNum(b.categoryBenchmarks?.avgPrice)) ||
-    categoryDefaults(ctx.category || '').aspFallback
+  const asp = resolveAspAnchor(ctx)
 
   // --- Cashback value derivation (single value OR banded) ---
-  const bands = normaliseBands(Array.isArray(cashback?.bands) ? cashback.bands : [])
-  const banded = bands.length > 0
-  const singleAmount = asNum(cashback?.amount)
-  const headlineMax = banded ? headlineMaxFromBands(bands, asp) : (singleAmount || 0)
-
-  let repAmount = 0
-  if (banded) {
-    const band = bandForASP(bands, asp)
-    repAmount = amountFromBandAtASP(band!, asp)
-  } else {
-    repAmount = singleAmount
-  }
+  const { banded, representative: repAmount, headlineMax } = deriveCashbackValue(cashback, asp)
 
   // Assured flag
   const assured =

@@ -1,0 +1,123 @@
+[
+  {
+    "id": "GGH95",
+    "title": "How to Improve Bayesian Reasoning Without Instruction",
+    "authors": ["Gerd Gigerenzer", "Ulrich Hoffrage"],
+    "year": 1995,
+    "publisher": "Cognitive Psychology",
+    "url": "https://cogsci.ucsd.edu/~coulson/203/GG_How_1995.pdf",
+    "finding": "Natural-frequency statements (e.g., \"winner every hour\") dramatically improve comprehension versus abstract odds or percentages.",
+    "implication": "Frame prize odds as frequent events or concrete counts instead of 1-in-N chance language when briefing copy.",
+    "tags": ["natural-frequency", "perceived-odds", "communication", "winnability"]
+  },
+  {
+    "id": "DRE94",
+    "title": "Conflict Between Intuitive and Rational Processing",
+    "authors": ["V. Denes-Raj", "S. Epstein"],
+    "year": 1994,
+    "publisher": "Journal of Personality and Social Psychology",
+    "url": "https://www.semanticscholar.org/paper/Conflict-between-intuitive-and-rational-processing%3A-Denes-Raj-Epstein/f639b05831f926e7566c2fb88a34d533f7a82e3c",
+    "finding": "Ratio bias / denominator neglect shows people overweight the numerator (\"thousands of winners\") and underweight the denominator.",
+    "implication": "Lead with big winner counts or frequent hits; hide any intimidating denominator math deep in T&Cs.",
+    "tags": ["ratio-bias", "numerator-salience", "consumer-psych"]
+  },
+  {
+    "id": "KT79",
+    "title": "Prospect Theory: An Analysis of Decision Under Risk",
+    "authors": ["Daniel Kahneman", "Amos Tversky"],
+    "year": 1979,
+    "publisher": "Econometrica",
+    "url": "https://web.mit.edu/curhan/www/docs/Articles/15341_Readings/Behavioral_Decision_Theory/Kahneman_Tversky_1979_Prospect_theory.pdf",
+    "finding": "Small probabilities are overweighted, but mid-sized, attainable rewards often drive more action than a single huge jackpot.",
+    "implication": "Balance headline prizes against a stack of attainable majors; massive jackpots are for PR, not everyday conversion.",
+    "tags": ["prospect-theory", "probability-weighting", "prize-design"]
+  },
+  {
+    "id": "PRE98",
+    "title": "The Probability Weighting Function",
+    "authors": ["Duncan Prelec"],
+    "year": 1998,
+    "publisher": "Econometrica",
+    "url": "https://www.jstor.org/stable/2998573",
+    "finding": "Decision weights follow an inverse-S curve, so subjective odds differ sharply from objective odds.",
+    "implication": "Use weighting functions when simulating felt winnability instead of assuming linear probability perception.",
+    "tags": ["probability-weighting", "decision-science"]
+  },
+  {
+    "id": "TFH13",
+    "title": "When a Day Means More Than a Year",
+    "authors": ["M. Trope", "N. Liberman", "J. Wakslak"],
+    "year": 2013,
+    "publisher": "Journal of Consumer Research",
+    "url": "https://www.researchgate.net/publication/255611657_When_a_Day_Means_More_than_a_Year_Effects_of_Temporal_Framing_on_Judgments_of_Health_Risk",
+    "finding": "Proximal temporal frames (\"every day\") increase perceived likelihood compared to distant aggregate frames.",
+    "implication": "Express cadence in near-term units (hourly/daily) instead of lump-sum winner totals.",
+    "tags": ["temporal-framing", "cadence", "perception"]
+  },
+  {
+    "id": "FS57",
+    "title": "Schedules of Reinforcement",
+    "authors": ["C. B. Ferster", "B. F. Skinner"],
+    "year": 1957,
+    "publisher": "Appleton-Century-Crofts",
+    "url": "https://www.bfskinner.org/wp-content/uploads/2015/05/Schedules_of_Reinforcement_PDF.pdf",
+    "finding": "Variable-ratio schedules (dense, unpredictable rewards) sustain engagement far better than sparse, fixed schedules.",
+    "implication": "Instant wins or hourly drops keep shoppers engaged; monthly draws alone feel unwinnable.",
+    "tags": ["reinforcement", "cadence", "behavioral-science"]
+  },
+  {
+    "id": "KUZ06",
+    "title": "The Goal-Gradient Hypothesis Resurrected",
+    "authors": ["Ran Kivetz", "Oleg Urminsky", "Yuhuang Zheng"],
+    "year": 2006,
+    "publisher": "Journal of Marketing Research",
+    "url": "https://home.uchicago.edu/ourminsky/Goal-Gradient_Illusionary_Goal_Progress.pdf",
+    "finding": "Visible progress and endowed progress accelerate completion rates (goal-gradient effect).",
+    "implication": "Show stamp cards, streaks, or bonus entry unlocks so shoppers feel momentum toward a reward.",
+    "tags": ["goal-gradient", "progress", "engagement"]
+  },
+  {
+    "id": "ND06",
+    "title": "The Endowed Progress Effect",
+    "authors": ["Joseph C. Nunes", "Xavier Drèze"],
+    "year": 2006,
+    "publisher": "Journal of Consumer Research",
+    "url": "https://journals.sagepub.com/doi/abs/10.1509/jmkr.43.1.39",
+    "finding": "Giving participants artificial head starts increases program completion and repeat behavior.",
+    "implication": "Auto-grant the first stamp/entry to make prize ladders feel achievable.",
+    "tags": ["progress", "loyalty", "repeat"]
+  },
+  {
+    "id": "KAL14",
+    "title": "Consumer Value-Maximizing Sweepstakes and Contests",
+    "authors": ["Ambar Rao", "Anil C. Kalra", "Indranil Bose"],
+    "year": 2014,
+    "publisher": "Journal of Marketing Research",
+    "url": "https://www-2.rotman.utoronto.ca/newthinking/sweepstakes.pdf",
+    "finding": "Consumers value promotions with multiple prize tiers and many small wins more than single giant jackpots, holding budget constant.",
+    "implication": "Keep 1 headline prize, 3–5 majors, and a large instant-win base for best perceived odds.",
+    "tags": ["prize-design", "tiering", "perceived-value"]
+  },
+  {
+    "id": "AJH11",
+    "title": "Scarcity Messages",
+    "authors": ["Praveen Aggarwal", "Sung-Yeon Park", "Jong-Man Huh"],
+    "year": 2011,
+    "publisher": "Journal of Advertising",
+    "url": "https://www.tandfonline.com/doi/abs/10.2753/JOA0091-3367400302",
+    "finding": "Limited-quantity scarcity tends to outperform limited-time scarcity on purchase intention, provided honesty is maintained.",
+    "implication": "Use prize inventory scarcity carefully to add urgency without compromising odds transparency.",
+    "tags": ["scarcity", "urgency", "ethics"]
+  },
+  {
+    "id": "AEA01",
+    "title": "The Optimal Allocation of Prizes in Contests",
+    "authors": ["David S. Szymanski", "Michel Poitevin"],
+    "year": 2001,
+    "publisher": "American Economic Review",
+    "url": "https://www.aeaweb.org/articles?id=10.1257/aer.91.3.542",
+    "finding": "Contest theory shows when to concentrate prizes versus spread them, based on participant effort and heterogeneity.",
+    "implication": "Use contest-style prize concentration only when the mechanic demands heavy effort (e.g., UGC); otherwise spread rewards.",
+    "tags": ["contest-theory", "effort", "prize-allocation"]
+  }
+]

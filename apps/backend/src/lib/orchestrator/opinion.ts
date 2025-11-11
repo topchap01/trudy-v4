@@ -464,6 +464,10 @@ export async function runOpinion(
   const cbHeadline: string = cashback?.headline ? String(cashback.headline) : ''
   const cbBands: any[] = Array.isArray(cashback?.bands) ? cashback.bands : []
   const cbAmount: number = Number(cashback?.amount ?? 0) || 0
+  const cbPercent: number | null =
+    typeof (cashback as any)?.percent === 'number' && !Number.isNaN((cashback as any).percent)
+      ? Number((cashback as any).percent)
+      : null
 
   const gwpFacts = gwp
     ? [
@@ -479,12 +483,18 @@ export async function runOpinion(
             `Cashback: banded${cbHeadline ? ` (headline: ${safe(cbHeadline)})` : ''}`,
             cashback.currency ? `currency: ${safe(cashback.currency)}` : '',
             `cap: ${cashback.cap != null ? safe(cashback.cap) : 'n/a'}`,
-            `proof: ${cashback.proofRequired ? 'REQUIRED' : 'OPTIONAL'}`
+            `proof: ${cashback.proofRequired ? 'REQUIRED' : 'OPTIONAL'}`,
+            cashback.processingDays != null ? `processing: ${safe(cashback.processingDays)}d` : ''
           ].filter(Boolean).join(', ')
         : [
-            `Cashback: ${cbAmount ? `$${cbAmount}` : 'n/a'} ${safe(cashback?.currency || '')}`.trim(),
+            `Cashback: ${
+              cbAmount
+                ? `$${cbAmount}`
+                : (cbPercent != null ? `${cbPercent}%` : 'n/a')
+            } ${safe(cashback?.currency || '')}`.trim(),
             `cap: ${cashback?.cap != null ? safe(cashback.cap) : 'n/a'}`,
-            `proof: ${cashback?.proofRequired ? 'REQUIRED' : 'OPTIONAL'}`
+            `proof: ${cashback?.proofRequired ? 'REQUIRED' : 'OPTIONAL'}`,
+            cashback?.processingDays != null ? `processing: ${safe(cashback.processingDays)}d` : ''
           ].join(', ')
     : ''
 

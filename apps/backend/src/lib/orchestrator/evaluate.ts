@@ -15,6 +15,8 @@ import { resolveModel } from '../models.js'
 import { loadCampaignRules, type CampaignRules } from '../campaign-rules.js'
 import { polishText } from '../polish.js'
 import { buildCampaignStyleSpec, pickStructure, enforceLexicon, stripAvoided } from '../style-spec.js'
+import { getMechanicRule } from '../mechanic-rules.js'
+import { buildFeltWinnabilityProfile } from '../winsense.js'
 
 /* -------------------------------------------------------------------------- */
 /*                                   Types                                    */
@@ -920,6 +922,11 @@ export async function runEvaluate(
   const assuredViaGWP = Boolean(type === 'GWP' || gwp) && (gwp?.cap === 'UNLIMITED' || gwp?.cap == null)
   const assuredViaFlag = Boolean(spec?.assuredValue || assuredItemsList.length > 0)
   const isAssuredValue = !!(assuredViaCashback || assuredViaGWP || assuredViaFlag)
+  const mechanicRule =
+    getMechanicRule(type) ||
+    getMechanicRule(spec?.mechanicOneLiner) ||
+    (Array.isArray(spec?.mechanicTypes) ? getMechanicRule(String(spec.mechanicTypes[0] || '')) : null) ||
+    getMechanicRule(spec?.entryMechanic)
 
   // ===== Hand-off from Framing (authoritative) =====
   const heroPref = ctx.warRoomPrefs?.allowHeroOverlay
@@ -1034,6 +1041,7 @@ export async function runEvaluate(
 
   const cbHeadline = cashback?.headline ? String(cashback.headline) : ''
   const cbBands = Array.isArray(cashback?.bands) ? cashback.bands : []
+  const cbPercent = typeof (cashback as any)?.percent === 'number' ? Number((cashback as any).percent) : null
   const cashbackFacts = cashback
     ? cbBands.length || cbHeadline
       ? [
@@ -1041,11 +1049,17 @@ export async function runEvaluate(
           `cap: ${cashback.cap != null ? cashback.cap : 'n/a'}`,
           `proof: ${cashback.proofRequired ? 'REQUIRED' : 'OPTIONAL'}`,
           cashback.currency ? `currency: ${cashback.currency}` : '',
+          cashback.processingDays != null ? `processing: ${cashback.processingDays}d` : '',
         ].filter(Boolean).join(', ')
       : [
-          `Cashback: ${cashback.amount != null ? cashback.amount : 'n/a'} ${cashback.currency || ''}`.trim(),
+          `Cashback: ${
+            cashback.amount != null
+              ? `$${cashback.amount}`
+              : (cbPercent != null ? `${cbPercent}%` : 'n/a')
+          } ${cashback.currency || ''}`.trim(),
           `cap: ${cashback.cap != null ? cashback.cap : 'n/a'}`,
           `proof: ${cashback.proofRequired ? 'REQUIRED' : 'OPTIONAL'}`,
+          cashback.processingDays != null ? `processing: ${cashback.processingDays}d` : '',
         ].join(', ')
     : ''
 
@@ -1058,7 +1072,13 @@ export async function runEvaluate(
     (assuredViaCashback || assuredViaGWP || assuredViaFlag)
       ? `Assured reward: ${
           assuredViaCashback
-            ? (cashback?.amount != null ? `$${cashback.amount} cashback` : 'cashback')
+            ? (
+                cashback?.amount != null
+                  ? `$${cashback.amount} cashback`
+                  : (cbPercent != null
+                      ? `${cbPercent}% cashback`
+                      : (cbBands.length || cbHeadline ? 'banded cashback' : 'cashback'))
+              )
             : assuredViaGWP
               ? `GWP — ${gwp?.item || 'item'}`
               : (assuredItemsList.length ? assuredItemsList.join(', ') : 'guaranteed for every qualifier')
@@ -1282,18 +1302,18 @@ If trade is not material, set "trade_priority":"LOW" and omit "trade_table".`
       ]
     : []
   const creditRewardHooks = [
-    'Wishlist Approved. Upgrade Everything.',
-    'Win $10K in Shark & Ninja Kit.',
-    'Daily $2K Gear Drops.',
-    'Swipe Your Wishlist. We Fund It.',
-    'Home Upgrade Fund — Yours to Spend.',
+    `${brandAlias} Cashback Hits Now.`,
+    `${brandAlias} Wishlist Approved.`,
+    'Daily $2K Cashback Drops.',
+    `${brandAlias} Covers Your Upgrade.`,
+    `${brandAlias} Fund — Yours to Spend.`,
   ]
   const assuredFallback = [
-    `Graduate, Claim Back ${brandAlias}.`,
-    `Rebate Locked at Graduation.`,
-    `Proof Uploaded. Rebate Approved.`,
-    'One Receipt, One Graduation, One Rebate.',
-    `${brandAlias} Promise: Pay Now, Reclaim Later.`,
+    `${brandAlias} Cashback Locked In.`,
+    `${brandAlias} Pays You Back.`,
+    'Proof Uploaded. Cashback Approved.',
+    `One Receipt. One ${brandAlias} Payback.`,
+    `${brandAlias} Promise: Pay Now, Claim Back.`,
   ]
   const chanceFallback = [
     ...(rewardCategoryFallback === 'ticket' ? sharedRewardHooks : []),
@@ -1589,6 +1609,7 @@ If trade is not material, set "trade_priority":"LOW" and omit "trade_table".`
       'AT_TYPICAL'
     ) : 'UNKNOWN'
   }
+  const winsense = buildFeltWinnabilityProfile(ctx, { benchmark: rules.benchmarks ?? null })
 
   return {
     content: finalProse,
@@ -1609,6 +1630,8 @@ If trade is not material, set "trade_priority":"LOW" and omit "trade_table".`
         hideScoreboard: true,
         assuredValue: isAssuredValue,
         offerIQ,
+        mechanicRule,
+        winsense,
         research: research || null,
         benchmarks: benchmarkMeta,
         priorOpinion: priorOpinion || null,
@@ -1617,6 +1640,8 @@ If trade is not material, set "trade_priority":"LOW" and omit "trade_table".`
         ideationHarness: ideationHarness || null,
       },
       offerIQ,
+      mechanicRule,
+      winsense,
       research: research || null,
       benchmarks: benchmarkMeta,
       debug: {

@@ -1,0 +1,186 @@
+{
+  "CASHBACK": {
+    "mechanic": "Cashback / Rebate",
+    "felt_value": "High when payout is near-instant and framed as money-back on everyday spend.",
+    "friction_risk": "Very high if claims require multi-step forms or long waits; run sludge audit on receipt flow.",
+    "brand_fit_congruency": "Best for utilitarian/considered durables where reassurance matters.",
+    "cadence_strength": "Pair with daily/weekly payout messaging so it doesn’t feel like a lottery.",
+    "compliance_risk": "Moderate—ensure disclosure of payout timelines;, keep funds trust accounts where required.",
+    "copy_moves": [
+      "Lead with immediacy (“Cash hits 48h after approval”).",
+      "Explain proof steps in one breath (“snap receipt, Trudy autovalidates, paid”)."
+    ],
+    "sludge_audit": [
+      "Auto-parse receipts; avoid manual reviews unless flagged.",
+      "Offer PayTo/instant transfer to remove cheque lag."
+    ],
+    "sources": [
+      "https://journals.sagepub.com/doi/abs/10.1177/002224379803500402"
+    ]
+  },
+  "PRICE_OFF": {
+    "mechanic": "Price-off (%)",
+    "felt_value": "Needs salient threshold (left-digit change, round-dollar drop) to be noticed.",
+    "friction_risk": "Low (automatic) but easily ignored if discount is small.",
+    "brand_fit_congruency": "Works for low stockability categories or premium tiers guarding against ‘free’ dilution.",
+    "cadence_strength": "N/A—felt instantly at POS.",
+    "compliance_risk": "Low, but ensure was/now claims meet ACCC evidence.",
+    "copy_moves": [
+      "Headline the left-digit break (“Now $49 (was $62)”).",
+      "Show reference price anchor when shoppers expect it."
+    ],
+    "sources": [
+      "https://dl.acm.org/doi/abs/10.1287/mksc.14.3.G161"
+    ]
+  },
+  "BOGO": {
+    "mechanic": "BOGO / Bonus Pack",
+    "felt_value": "Zero-price framing (“free pack”) beats equivalent % off for most shoppers.",
+    "friction_risk": "Low if bundle execution is simple; ensure supply can handle stock-up behaviour.",
+    "brand_fit_congruency": "Great for stock-up, sharable, pantry categories. Less so for bulky durables.",
+    "cadence_strength": "N/A—value experienced upfront.",
+    "compliance_risk": "Low; watch for unit pricing disclosures.",
+    "copy_moves": [
+      "State bonus quantity (“Buy 2, get 2 free”) vs percentages.",
+      "Call out shelf-life cues to encourage multiple unit pickup."
+    ],
+    "sources": [
+      "https://web.mit.edu/ariely/www/MIT/Papers/zero.pdf"
+    ]
+  },
+  "GWP": {
+    "mechanic": "Gift With Purchase",
+    "felt_value": "Peaks when premium/gift extends the core benefit (benefit congruency).",
+    "friction_risk": "Moderate (fulfilment logistics) but no claim forms if on-pack.",
+    "brand_fit_congruency": "Hedonic products → hedonic gifts; durables → accessories/warranty to reduce risk.",
+    "cadence_strength": "Feels instantaneous if inventory is on hand; avoid post-campaign shipping if possible.",
+    "compliance_risk": "Low; ensure value disclosure for trade promo permits.",
+    "copy_moves": [
+      "Name the exact accessory + RRP (“Bonus $129 steam wand”).",
+      "Link gift to use-case (“Perfect fit for your new appliance”)."
+    ],
+    "sources": [
+      "https://journals.sagepub.com/doi/10.1509/jmkg.64.4.65.18071"
+    ]
+  },
+  "LOYALTY_STAMP": {
+    "mechanic": "Loyalty stamp / collect-to-get",
+    "felt_value": "Rises sharply when shoppers see head-start progress and near-term targets.",
+    "friction_risk": "High if progress is invisible; reduce steps via auto-stamping.",
+    "brand_fit_congruency": "Great for habitual categories (coffee, QSR, grocery); match reward to purchase cycle.",
+    "cadence_strength": "Driven by progress cues; show “2 visits left” style prompts.",
+    "compliance_risk": "Low; data privacy handling must be clear.",
+    "copy_moves": [
+      "Auto-credit the first stamp (“We started you halfway there”).",
+      "Display distance-to-reward on POS + email."
+    ],
+    "sources": [
+      "https://www.researchgate.net/publication/23547282_The_Endowed_Progress_Effect_How_Artificial_Advancement_Increases_Effort"
+    ]
+  },
+  "INSTANT_WIN": {
+    "mechanic": "Instant win / RNG",
+    "felt_value": "High when cadence is dense (hourly/daily) and odds are framed as frequent events.",
+    "friction_risk": "Moderate—depends on entry form simplicity.",
+    "brand_fit_congruency": "Best when brand wants momentum + repeat visits (FMCG, convenience, liquor).",
+    "cadence_strength": "Core lever; set hourly/daily windows tied to claim data.",
+    "compliance_risk": "Medium—watch near-miss simulation and AU permit rules.",
+    "copy_moves": [
+      "Say “Winners every hour” vs total winners.",
+      "Publish recent winner ticker for social proof."
+    ],
+    "sources": [
+      "https://www.bfskinner.org/wp-content/uploads/2015/05/Schedules_of_Reinforcement_PDF.pdf"
+    ]
+  },
+  "SCARCITY": {
+    "mechanic": "Scarcity / urgency frame",
+    "felt_value": "Limited quantity messages outperform time-based urgency for aspirational items.",
+    "friction_risk": "Low—just messaging. Ensure honesty to avoid backlash.",
+    "brand_fit_congruency": "Works when prize/product is symbolic or premium; avoid for everyday staples unless stock is real.",
+    "cadence_strength": "N/A, but pair with countdown only if supply data supports it.",
+    "compliance_risk": "High if scarcity claim is false—document inventory proof.",
+    "copy_moves": [
+      "“Only 300 artisan sets available nationally.”",
+      "Tie scarcity to reason (“batch-roasted, limited harvest”)."
+    ],
+    "sources": [
+      "https://www.tandfonline.com/doi/abs/10.2753/JOA0091-3367400302"
+    ]
+  },
+  "REFERRAL": {
+    "mechanic": "Referral / advocate program",
+    "felt_value": "Two-sided incentives lift participation; align reward type with product positioning.",
+    "friction_risk": "Moderate (tracking). Provide instant acknowledgement to both parties.",
+    "brand_fit_congruency": "Strong for subscription, finance, telco—segments where referred users have higher LTV.",
+    "cadence_strength": "N/A, but send streak/status updates (“1 friend away from VIP tier”).",
+    "compliance_risk": "Medium—ensure privacy + spam approvals (especially AU Spam Act).",
+    "copy_moves": [
+      "Spell out both sides (“You and your friend each get $50 credit”).",
+      "Use progress meter (“3/5 referrals unlocked”)."
+    ],
+    "sources": [
+      "https://journals.sagepub.com/doi/10.1509/jm.75.1.46"
+    ]
+  },
+  "BUNDLE": {
+    "mechanic": "Bundle / add-on",
+    "felt_value": "Clear complementary fit beats arbitrary bundling; show genuine combined savings.",
+    "friction_risk": "Low operationally; risk is shopper suspicion if bundle feels forced.",
+    "brand_fit_congruency": "Durables + accessories, or multi-SKU grocery missions.",
+    "cadence_strength": "N/A.",
+    "compliance_risk": "Low; ensure unit pricing clarity.",
+    "copy_moves": [
+      "Explain why bundle matters (“Prep + serve kit so you’re launch-ready”).",
+      "Quantify savings (“Save $180 vs buying pieces solo”)."
+    ],
+    "sources": [
+      "https://ideas.repec.org/a/spr/schmbr/v72y2020i1d10.1007_s41464-020-00082-2.html"
+    ]
+  },
+  "WARRANTY": {
+    "mechanic": "Extended warranty / service add-on",
+    "felt_value": "Signals quality and reduces post-purchase risk; especially useful for challenger brands.",
+    "friction_risk": "Low when auto-registered; high if buyer must mail forms.",
+    "brand_fit_congruency": "Durables, appliances, consumer electronics.",
+    "cadence_strength": "N/A.",
+    "compliance_risk": "Medium—ensure coverage terms meet Australian Consumer Law.",
+    "copy_moves": [
+      "Spell coverage plainly (“3-year total care incl. parts & labour”).",
+      "Highlight automatic registration to remove admin fear."
+    ],
+    "sources": [
+      "https://ideas.repec.org/a/spr/schmbr/v72y2020i1d10.1007_s41464-020-00082-2.html"
+    ]
+  },
+  "PRICE_THRESHOLD": {
+    "mechanic": "Price-off threshold / spend-and-save",
+    "felt_value": "Needs noticeable jump (round-dollar, left-digit); thresholds too tight feel manipulative.",
+    "friction_risk": "Low, but shopper needs clarity on qualifying SKUs.",
+    "brand_fit_congruency": "Grocery baskets, skincare, specialty retail where trading-up is natural.",
+    "cadence_strength": "Immediate reward; emphasise closeness (“Spend $12 more for $20 off”).",
+    "compliance_risk": "Low; ensure qualifying SKU list is transparent.",
+    "copy_moves": [
+      "Show progress at POS (“Only $8 short of $20 bonus”).",
+      "Use round-number benefit ($20/$50) rather than 17.5%."
+    ],
+    "sources": [
+      "https://dl.acm.org/doi/abs/10.1287/mksc.14.3.G161"
+    ]
+  },
+  "REF_COMPLIANCE_AU": {
+    "mechanic": "AU Permit Cheatsheet",
+    "felt_value": "N/A",
+    "friction_risk": "Highlight permit triggers early.",
+    "brand_fit_congruency": "All AU chance promos.",
+    "cadence_strength": "N/A",
+    "compliance_risk": "High—Games of chance require permits once prize pool crosses state thresholds (ACT > $3k, SA > $5k, NSW > $10k).",
+    "copy_moves": [
+      "Embed permit ID in footer copy once issued.",
+      "Set go-live only after paperwork is confirmed."
+    ],
+    "sources": [
+      "https://www.gamblingandracing.act.gov.au/industry/lotteries/trade-promotions"
+    ]
+  }
+}

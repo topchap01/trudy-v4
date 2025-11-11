@@ -176,6 +176,7 @@ function buildSections(snapshot: SnapshotRich, opts: RenderOptionsRuntime) {
     sections.push({ id, title, html })
   }
 
+  add('marks-view', 'Mark’s View', renderMarksViewSection(snapshot, opts))
   add('synthesis', 'Executive Synthesis', renderMarkdownBlock(snapshot.narratives.synthesis?.sanitized || snapshot.narratives.synthesis?.raw))
   add('ideation', 'Creative Sparks', renderIdeationSection(snapshot))
   add('evaluation', 'Evaluation Highlights', renderEvaluationSection(snapshot, opts))
@@ -202,6 +203,48 @@ function renderOnePager(snapshot: SnapshotRich, opts: RenderOptionsRuntime) {
     return renderRebootWithAlternatives(ctx)
   }
   return renderReviewAsBriefed(ctx)
+}
+
+function renderMarksViewSection(snapshot: SnapshotRich, opts: RenderOptionsRuntime) {
+  const ctx = buildLensContext(snapshot, opts)
+  const chapters = [
+    {
+      id: 'review',
+      title: 'Review as briefed',
+      eyebrow: 'Read it exactly as briefed',
+      html: renderReviewAsBriefed(ctx),
+    },
+    {
+      id: 'sharpen',
+      title: 'Sharpen with improvements',
+      eyebrow: 'Tighten the existing route',
+      html: renderSharpenWithImprovements(ctx),
+    },
+    {
+      id: 'reboot',
+      title: 'Reboot with alternatives',
+      eyebrow: 'Pitch the bolder reroute',
+      html: renderRebootWithAlternatives(ctx),
+    },
+  ].filter((chapter) => chapter.html && chapter.html.trim().length > 0)
+
+  if (!chapters.length) return ''
+
+  return `<div class="marks-view">
+    ${chapters
+      .map(
+        (chapter) => `<article class="marks-chapter" data-chapter="${chapter.id}">
+        <header class="marks-chapter__head">
+          <div class="chapter-eyebrow">${escapeHtml(chapter.eyebrow)}</div>
+          <h3>${escapeHtml(chapter.title)}</h3>
+        </header>
+        <div class="marks-chapter__body">
+          ${chapter.html}
+        </div>
+      </article>`
+      )
+      .join('')}
+  </div>`
 }
 
 type ScoreEntry = {
@@ -557,12 +600,13 @@ function cleanText(value: string) {
   return withoutWhitespace
 }
 
-function dedupeStrings(items: string[]) {
+function dedupeStrings(items: Array<string | undefined>) {
   const seen = new Set<string>()
   const out: string[] = []
   for (const item of items) {
+    if (!item) continue
     const key = item.toLowerCase()
-    if (item && !seen.has(key)) {
+    if (!seen.has(key)) {
       seen.add(key)
       out.push(item)
     }
@@ -572,7 +616,7 @@ function dedupeStrings(items: string[]) {
 
 function extractScoreboardEntries(board: any): ScoreEntry[] {
   if (!board || typeof board !== 'object') return []
-  return Object.entries(board)
+  return Object.entries(board as Record<string, any>)
     .filter(([key]) => !['decision', 'conditions', 'measurement'].includes(key))
     .map(([key, value]) => ({
       label: prettifyScoreboardKey(key),
@@ -1487,6 +1531,13 @@ body{margin:0;background:var(--canvas);font-family:"IBM Plex Sans","Inter","Sego
 .structured-block{display:flex;flex-direction:column;gap:16px;font-size:15px;}
 .structured-block h3{margin:14px 0 6px;font-size:13px;letter-spacing:0.24em;text-transform:uppercase;color:var(--muted);font-weight:600;}
 .structured-block p{margin:0;color:var(--ink);line-height:1.65;font-size:15px;}
+.marks-view{display:grid;gap:24px;margin-bottom:8px;}
+.marks-chapter{border:1px solid rgba(15,23,42,0.08);border-radius:20px;padding:24px;background:linear-gradient(180deg,#ffffff 0%,#f6f8fc 100%);box-shadow:0 16px 32px rgba(15,23,42,0.04);}
+.marks-chapter__head{margin-bottom:12px;}
+.marks-chapter__head h3{margin:6px 0 0;font-size:21px;font-weight:600;color:var(--ink);}
+.chapter-eyebrow{font-size:11px;letter-spacing:0.28em;text-transform:uppercase;color:var(--muted);font-weight:600;}
+.marks-chapter__body .lens-section{margin-top:12px;}
+.marks-chapter__body .lens-section:first-of-type{margin-top:0;}
 .structured-block strong{color:#0f172a;font-weight:700;}
 .structured-block ul{margin:0 0 12px 18px;padding:0;}
 .structured-block li{margin:4px 0;color:var(--ink);line-height:1.5;font-size:14px;}

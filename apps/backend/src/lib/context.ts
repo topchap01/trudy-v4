@@ -50,12 +50,24 @@ export type BriefSpec = {
   gwp?: { item?: string | null; triggerQty?: number | null; cap?: 'UNLIMITED' | number | null }
   cashback?: {
     amount?: number | null
+    percent?: number | null
     currency?: string | null
     cap?: 'UNLIMITED' | number | null
     proofRequired?: boolean
+    processingDays?: number | null
+    mode?: string | null
     // NEW — banded cashback
     headline?: string | null
-    bands?: Array<{ min?: number | null; max?: number | null; amount?: number | null; label?: string | null }>
+    bands?: Array<{
+      min?: number | null
+      max?: number | null
+      minPrice?: number | null
+      maxPrice?: number | null
+      amount?: number | null
+      percent?: number | null
+      label?: string | null
+      sku?: string | null
+    }>
   }
   moneyBackGuarantee?: { timeframeDays?: number | null; conditions?: string | null }
   priceOff?: { value?: number | null; kind?: '%' | '$' | string }
@@ -388,23 +400,47 @@ function normalizeBrief(input: any, row: Campaign): BriefSpec {
     }
   }
   if (p.cashback) {
-    type CashBackBand = { min: number | null; max: number | null; amount: number | null; label: string | null }
+    type CashBackBand = {
+      minPrice: number | null
+      maxPrice: number | null
+      min?: number | null
+      max?: number | null
+      amount: number | null
+      percent: number | null
+      label: string | null
+      sku: string | null
+    }
     const rawBands = Array.isArray((p.cashback as any).bands) ? (p.cashback as any).bands : []
     const bands: CashBackBand[] = rawBands
-      .map((r: any) => ({
-        min: toNumOrNull(r?.min),
-        max: toNumOrNull(r?.max),
-        amount: toNumOrNull(r?.amount),
-        label: nonEmptyOrNull(r?.label ?? null)
-      }))
-      .filter((band: CashBackBand) => (band.amount ?? 0) > 0)
+      .map((r: any) => {
+        const minPrice = toNumOrNull(r?.minPrice ?? r?.min)
+        const maxPrice = toNumOrNull(r?.maxPrice ?? r?.max)
+        const amount = toNumOrNull(r?.amount)
+        const percent = toNumOrNull(r?.percent)
+        const label = nonEmptyOrNull(r?.label ?? null)
+        const sku = nonEmptyOrNull(r?.sku ?? null)
+        return {
+          minPrice,
+          maxPrice,
+          min: minPrice,
+          max: maxPrice,
+          amount,
+          percent,
+          label,
+          sku,
+        }
+      })
+      .filter((band: CashBackBand) => (band.amount ?? 0) > 0 || (band.percent ?? 0) > 0)
     p.cashback = {
       amount: toNumOrNull(p.cashback.amount),
+      percent: toNumOrNull((p.cashback as any).percent),
       currency: nonEmptyOrNull(p.cashback.currency ?? null),
       cap: (p.cashback.cap === 'UNLIMITED') ? 'UNLIMITED' : toNumOrNull(p.cashback.cap),
       proofRequired: toBool(p.cashback.proofRequired),
+      processingDays: toNumOrNull((p.cashback as any).processingDays),
+      mode: nonEmptyOrNull((p.cashback as any).mode ?? null),
       headline: nonEmptyOrNull((p.cashback as any).headline ?? null),
-      bands
+      bands,
     }
   }
   if (p.moneyBackGuarantee) {
@@ -930,23 +966,38 @@ export function renderBriefSnapshot(ctx: CampaignContext): string {
   if (Array.isArray(s.media) && s.media.length) parts.push(`Media: ${safeTrim(s.media.join(', '))}`)
 
   // Type-specific quick lines
-  if (s.cashback && (s.cashback.amount != null || s.cashback.cap || s.cashback.currency || (s.cashback as any).headline || (s.cashback as any).bands?.length)) {
-    const cap = s.cashback.cap === 'UNLIMITED' ? 'UNLIMITED' : (s.cashback.cap ?? null)
-    const head = (s.cashback as any).headline ? ` | Headline: ${(s.cashback as any).headline}` : ''
+  if (s.cashback && (s.cashback.amount != null || (s.cashback as any).percent != null || s.cashback.cap || s.cashback.currency || (s.cashback as any).headline || (s.cashback as any).bands?.length)) {
+    const cash = s.cashback as any
+    const cap = cash.cap === 'UNLIMITED' ? 'UNLIMITED' : (cash.cap ?? null)
+    const head = cash.headline ? ` | Headline: ${cash.headline}` : ''
+    const proof = cash.proofRequired ? ' | Proof required' : ''
+    const processing = cash.processingDays != null ? ` | Processing: ${safeTrim(cash.processingDays)}d` : ''
+    const mode = cash.mode ? ` | Mode: ${safeTrim(cash.mode)}` : ''
+    const valueLabel = cash.amount != null
+      ? `$${safeTrim(cash.amount)}`
+      : (cash.percent != null ? `${safeTrim(cash.percent)}%` : (Array.isArray(cash.bands) && cash.bands.length ? 'Banded' : '?'))
     parts.push(
-      `Cashback: ${safeTrim(s.cashback.amount ?? '?')} ${safeTrim(s.cashback.currency ?? '')}` +
+      `Cashback: ${valueLabel} ${safeTrim(cash.currency ?? '')}`.trim() +
       `${cap ? ` | Cap: ${safeTrim(cap)}` : ''}` +
-      `${s.cashback.proofRequired ? ' | Proof required' : ''}` +
+      proof +
+      processing +
+      mode +
       head
     )
-    const bands = (s.cashback as any).bands || []
-    if (Array.isArray(bands) && bands.length) {
+    const bands = Array.isArray(cash.bands) ? cash.bands : []
+    if (bands.length) {
       const lines = bands.map((b: any) => {
+        const min = b.minPrice ?? b.min ?? null
+        const max = b.maxPrice ?? b.max ?? null
         const range =
-          (b.min != null || b.max != null)
-            ? `${b.min != null ? `$${b.min}` : ''}${(b.min != null || b.max != null) ? '–' : ''}${b.max != null ? `$${b.max}` : '+'}`
+          (min != null || max != null)
+            ? `${min != null ? `$${safeTrim(min)}` : '>=0'}${max != null ? `-$${safeTrim(max)}` : '+'}`
             : ''
-        return `${range ? range + ': ' : ''}$${b.amount}${b.label ? ` (${b.label})` : ''}`
+        const value =
+          b.amount != null ? `$${safeTrim(b.amount)}` :
+          (b.percent != null ? `${safeTrim(b.percent)}%` : '?')
+        const label = b.label ? ` (${safeTrim(b.label)})` : ''
+        return `${range ? range + ': ' : ''}${value}${label}`
       })
       parts.push(`Cashback bands: ${lines.join(' | ')}`)
     }

@@ -176,8 +176,16 @@ export async function runSynthesis(ctx: CampaignContext, inputs: SynthesisInputs
   if (heroPrize) contextLines.push(`Hero prize: ${heroPrize}${heroPrizeCount ? ` x${heroPrizeCount}` : ''}`)
   if (totalWinners != null) contextLines.push(`Total winners (brief): ${totalWinners}${winnersPerDay ? ` (~${winnersPerDay.toFixed(1)} per day)` : ''}`)
   if (assuredValue) {
+    const cbPercent =
+      spec.cashback && typeof (spec.cashback as any).percent === 'number' && !Number.isNaN((spec.cashback as any).percent)
+        ? Number((spec.cashback as any).percent)
+        : null
     const descriptor = spec.cashback
-      ? (spec.cashback.amount != null ? `$${spec.cashback.amount} cashback` : 'cashback guarantee')
+      ? (spec.cashback.amount != null
+          ? `$${spec.cashback.amount} cashback`
+          : (cbPercent != null
+              ? `${cbPercent}% cashback`
+              : (Array.isArray(spec.cashback.bands) && spec.cashback.bands.length ? 'banded cashback' : 'cashback guarantee')))
       : assuredItemsList.length
         ? assuredItemsList.slice(0, 3).join(', ')
         : 'guaranteed reward'

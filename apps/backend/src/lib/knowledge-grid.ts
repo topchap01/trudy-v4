@@ -12,6 +12,12 @@ export type BenchmarkSlice = {
   heroCountStrong?: number | null
   cadenceHint?: string | null
   frictionHint?: string | null
+  winnersPerDayTypical?: number | null
+  winnersPerDayStrong?: number | null
+  frequencyFrame?: string | null
+  topPrizeSweetSpot?: number | null
+  prizeTierGuidance?: Record<string, unknown> | null
+  progressCueScore?: number | null
   source?: string | null
   confidence?: number | null
   metadata?: Record<string, unknown> | null
@@ -86,6 +92,12 @@ export async function getBenchmarkSlice(query: BenchmarkQuery): Promise<Benchmar
     heroCountStrong: record.heroCountStrong,
     cadenceHint: record.cadenceHint,
     frictionHint: record.frictionHint,
+    winnersPerDayTypical: record.winnersPerDayTypical,
+    winnersPerDayStrong: record.winnersPerDayStrong,
+    frequencyFrame: record.frequencyFrame,
+    topPrizeSweetSpot: record.topPrizeSweetSpot,
+    prizeTierGuidance: record.prizeTierGuidance as Record<string, unknown> | null,
+    progressCueScore: record.progressCueScore,
     source: record.source,
     confidence: record.confidence,
     metadata: record.metadata as Record<string, unknown> | null,

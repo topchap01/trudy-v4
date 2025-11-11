@@ -117,6 +117,10 @@ export async function runStrategist(ctx: CampaignContext, inputs: StrategistInpu
     assuredItemsList.length > 0
   )
   const heroPrize = typeof spec.heroPrize === 'string' ? spec.heroPrize.trim() : ''
+  const brandAliasSource = (spec.brand || ctx.clientName || ctx.title || 'Brand').toString()
+  const brandAlias = brandAliasSource.includes('—')
+    ? brandAliasSource.split('—')[0].trim()
+    : brandAliasSource.trim()
   const heroPrizeCount = toNumber(spec.heroPrizeCount ?? spec.hero_prize_count ?? spec.heroPrize_count ?? null)
   const cadenceCopy = spec.cadenceCopy || ''
   const totalWinners = rules.prize.totalWinners
@@ -168,8 +172,16 @@ export async function runStrategist(ctx: CampaignContext, inputs: StrategistInpu
   if (heroPrize) contextLines.push(`Hero prize: ${heroPrize}${heroPrizeCount ? ` x${heroPrizeCount}` : ''}`)
   if (totalWinners != null) contextLines.push(`Total winners (brief): ${totalWinners}${winnersPerDay ? ` (~${winnersPerDay.toFixed(1)} per day)` : ''}`)
   if (assuredValue && (spec.cashback || assuredItemsList.length)) {
+    const cbPercent =
+      spec.cashback && typeof (spec.cashback as any).percent === 'number' && !Number.isNaN((spec.cashback as any).percent)
+        ? Number((spec.cashback as any).percent)
+        : null
     const descriptor = spec.cashback
-      ? (spec.cashback.amount != null ? `$${spec.cashback.amount} cashback` : 'cashback guarantee')
+      ? (spec.cashback.amount != null
+          ? `$${spec.cashback.amount} cashback`
+          : (cbPercent != null
+              ? `${cbPercent}% cashback`
+              : (Array.isArray(spec.cashback.bands) && spec.cashback.bands.length ? 'banded cashback' : 'cashback guarantee')))
       : assuredItemsList.length
         ? assuredItemsList.slice(0, 3).join(', ')
         : 'guaranteed reward'
@@ -260,15 +272,15 @@ export async function runStrategist(ctx: CampaignContext, inputs: StrategistInpu
           ? 'Turn the prize pool into an earned wishlist moment: show how daily product-credit drops land, highlight the home-upgrade storytelling, and use CRM proof to dramatise winners without inventing new prize math.'
           : 'Recast the reward so it genuinely feels shared (paired prizes, co-created experiences) without rewriting the prize budget. Be explicit about what changes, what it costs, and how fairness stays intact.')
   const cadenceInstruction = isCashbackAssured
-    ? 'Map the proof path: purchase verification, interim communications during study, graduation evidence, payout timing, and who runs adjudication. Keep it realistic—web form, CRM, outsourced escrow—no new platforms or daily bursts.'
+    ? 'Map the proof path: purchase verification, interim comms (claim submitted, approved, paid), payout timing, and who adjudicates. Keep it web-form simple—no extra portals, phased uploads, or daily bursts.'
     : 'Test an hourly or daily winner burst. Explain why it matters now, what it costs operationally, and how we monitor it.'
   const heroInstruction = isCashbackAssured
-    ? 'Detail how ASUS funds and tracks the deferred rebate pool, manages accruals, and partners (universities, verification vendors, finance) without introducing new prizes. Call out legal/financial guardrails and comms for students approaching graduation.'
+    ? `Detail how ${brandAlias} funds and reconciles the cashback pool, handles finance/ops partners, and keeps compliance tight without inventing new prizes. Spell out legal guardrails and the comms that carry claimants through to payment.`
     : (forbidHero
         ? 'Swap the hero overlay for retailer-led premiere nights (one per key state). Use retailer CRM invites, deliver turnkey assets, keep staff lift at zero, and show cost/ROI vs the shared ticket pool.'
         : prizeFeelsTicket
           ? 'Design a tight hero overlay (e.g., three hero prizes) and explain how to fund it without destroying breadth.'
-          : 'Design a hero tier that proves SharkNinja solves whole-home upgrades (e.g., $10K makeover packs). Spell out funding reallocations, retailer storytelling, and why fairness stays intact.')
+          : `Design a hero tier that proves ${brandAlias} solves whole-home upgrades (e.g., $10K makeover packs). Spell out funding reallocations, retailer storytelling, and why fairness stays intact.`)
 
   const prompt = `You are the Strategist: a senior promo architect who pressure-tests mechanics before the CMO sees them.\n\n` +
     'Context:\n' + contextLines.map((line) => `- ${line}`).join('\n') + '\n' +

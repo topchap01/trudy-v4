@@ -2,7 +2,7 @@ import { chat } from '../openai.js'
 import type { CampaignContext } from '../context.js'
 import { renderBriefSnapshot } from '../context.js'
 import * as Promo from '../promotrack.js'
-import { scoreOffer } from '../offeriq.js'
+import { scoreOffer, deriveCashbackValue, resolveAspAnchor } from '../offeriq.js'
 import type { OfferIQ } from '../offeriq.js'
 import { runResearch, type ResearchPack } from '../research.js'
 import { resolveModel } from '../models.js'
@@ -561,19 +561,36 @@ export async function runFraming(ctx: CampaignContext) {
   const cashback = (ctx.briefSpec as any)?.cashback || null
   const cashbackBands = Array.isArray(cashback?.bands) ? cashback.bands : []
   const cashbackHeadline = cashback?.headline || null
-  const cashbackAmount = Number(cashback?.amount ?? 0) || 0
+  const aspAnchor = resolveAspAnchor(ctx)
+  const derivedCashback = cashback ? deriveCashbackValue(cashback, aspAnchor) : null
+  const cashbackAmount = Number(
+    offerIQ?.diagnostics?.valueAmount ??
+    derivedCashback?.representative ??
+    0
+  ) || 0
+  const cashbackPercent =
+    (typeof cashback?.percent === 'number' && !Number.isNaN(cashback.percent) ? cashback.percent : null) ??
+    (derivedCashback?.percentValue ?? null)
 
   // Prize presence (prevents hero-prize hallucination)
   const prizePresence = derivePrizePresence(ctx.briefSpec)
 
   // Cashback competitiveness
   type CashCompetitiveness = NonNullable<FramingV2Meta['benchmarks']>['cashbackIsCompetitive']
-  const cashbackIsCompetitive: CashCompetitiveness =
-    cbBench.sample === 0
-      ? 'UNKNOWN'
-      : (cbBench.typicalAbs && cashbackAmount > 0)
-          ? (cashbackAmount > cbBench.typicalAbs ? 'ABOVE_TYPOLOGICAL' : (cashbackAmount === cbBench.typicalAbs ? 'MEETS_TYPOLOGICAL' : 'BELOW_TYPOLOGICAL'))
-          : (cbBench.typicalPct ? 'UNKNOWN' : 'UNKNOWN')
+  const cashbackIsCompetitive: CashCompetitiveness = (() => {
+    if (cbBench.sample === 0) return 'UNKNOWN'
+    if (cbBench.typicalAbs && cashbackAmount > 0) {
+      if (cashbackAmount > cbBench.typicalAbs) return 'ABOVE_TYPOLOGICAL'
+      if (Math.abs(cashbackAmount - cbBench.typicalAbs) < 1e-6) return 'MEETS_TYPOLOGICAL'
+      return 'BELOW_TYPOLOGICAL'
+    }
+    if (cbBench.typicalPct && cashbackPercent != null) {
+      if (cashbackPercent > cbBench.typicalPct) return 'ABOVE_TYPOLOGICAL'
+      if (Math.abs(cashbackPercent - cbBench.typicalPct) < 1e-6) return 'MEETS_TYPOLOGICAL'
+      return 'BELOW_TYPOLOGICAL'
+    }
+    return 'UNKNOWN'
+  })()
 
   const briefLines: string[] = []
   if (objectiveSignals.length) briefLines.push(`- Objectives: ${objectiveSignals.join(' • ')}`)
@@ -924,7 +941,7 @@ export async function runFraming(ctx: CampaignContext) {
 
   // cashback competitiveness specific hypotheses
   try {
-    const repAmount = Number(offerIQ?.diagnostics?.valueAmount || cashbackAmount || 0)
+    const repAmount = cashbackAmount || Number(offerIQ?.diagnostics?.valueAmount || derivedCashback?.representative || 0)
     if (isCashback && cbBench.sample > 0 && (cbBench.typicalAbs || cbBench.typicalPct)) {
       if (cbBench.typicalAbs && repAmount > 0 && repAmount < cbBench.typicalAbs) {
         meta.improvement_hypotheses = cap<string>([
