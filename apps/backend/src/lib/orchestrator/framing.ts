@@ -6,6 +6,7 @@ import { scoreOffer, deriveCashbackValue, resolveAspAnchor } from '../offeriq.js
 import type { OfferIQ } from '../offeriq.js'
 import { runResearch, type ResearchPack } from '../research.js'
 import { resolveModel } from '../models.js'
+import { proofreadProse } from '../proofreader.js'
 
 type PrizePresence = 'NONE' | 'BREADTH_ONLY' | 'MAJOR_PRESENT'
 
@@ -85,6 +86,34 @@ function cap<T>(xs: any, n: number): T[] {
   return arr.map((x) => String(x).trim()).filter(Boolean).slice(0, n) as T[]
 }
 
+function cleanSignalText(value: any): string {
+  if (value == null) return ''
+  let text = typeof value === 'string' ? value : String(value)
+  text = text.replace(/[\u2022•]/g, ' ')
+  text = text.replace(/\s+/g, ' ').trim()
+  text = text.replace(/^[-–—•\s'"\[\](){}]+/, '').trim()
+  text = text.replace(/['"\[\](){}]+$/, '').trim()
+  text = text.replace(/\s{2,}/g, ' ').trim()
+  text = text.replace(/Change-from:[^→]+→\s*Change-to:\s*/gi, '').trim()
+  const lowered = text.toLowerCase()
+  if (
+    !text ||
+    lowered === ']' ||
+    lowered === '[' ||
+    lowered === 'null' ||
+    lowered === 'none' ||
+    lowered === 'n/a' ||
+    lowered === 'na' ||
+    lowered === 'tbc' ||
+    lowered === 'tbd' ||
+    lowered.includes('[object object]')
+  ) {
+    return ''
+  }
+  if (/^[\])}]+$/.test(text) || /^[\W_]+$/.test(text)) return ''
+  return text
+}
+
 function listify(value: any): string[] {
   if (!value) return []
   if (Array.isArray(value)) return value.flatMap(listify)
@@ -92,11 +121,13 @@ function listify(value: any): string[] {
     return value
       .split(/[•\u2022,\n;/|]+/)
       .map(s => s.trim())
+      .map(cleanSignalText)
       .filter(Boolean)
   }
   if (typeof value === 'number' || typeof value === 'boolean') {
     const s = String(value).trim()
-    return s ? [s] : []
+    const cleaned = cleanSignalText(s)
+    return cleaned ? [cleaned] : []
   }
   if (typeof value === 'object') return Object.values(value).flatMap(listify)
   return []
@@ -106,7 +137,7 @@ function takeUnique(values: string[], limit?: number): string[] {
   const seen = new Set<string>()
   const out: string[] = []
   for (const raw of values) {
-    const s = String(raw || '').trim()
+    const s = cleanSignalText(raw)
     if (!s) continue
     const key = s.toLowerCase()
     if (seen.has(key)) continue
@@ -129,21 +160,39 @@ function formatFacts(facts: Array<{ claim?: string; source?: string }> | undefin
       const claim = truncate(String(f?.claim || '').trim())
       if (!claim) return null
       const src = String(f?.source || '').trim()
-      return src ? `${label}: ${claim} (${src})` : `${label}: ${claim}`
+      const line = src ? `${label}: ${claim} (${src})` : `${label}: ${claim}`
+      return cleanSignalText(line)
     })
     .filter(Boolean) as string[]
 }
 
 // narrow research to relevant category/brand tokens
 function tokensFromCtx(ctx: CampaignContext): string[] {
-  const toks: string[] = []
-  if (ctx.category) toks.push(ctx.category.toLowerCase())
-  if (ctx.briefSpec?.brand) toks.push(String(ctx.briefSpec.brand).toLowerCase())
-  // sensible defaults for Wicked Sisters
-  toks.push('dessert','pudding','custard','snacking dessert','chilled dessert')
-  return Array.from(new Set(toks)).filter(Boolean)
+  const tokens = new Set<string>()
+  const add = (value?: string | null) => {
+    if (!value) return
+    const cleaned = cleanSignalText(value)
+    if (!cleaned) return
+    cleaned
+      .split(/[^a-z0-9+&]+/i)
+      .map((part) => part.trim().toLowerCase())
+      .filter((part) => part.length >= 3)
+      .forEach((part) => tokens.add(part))
+  }
+  add(ctx.category)
+  add(ctx.briefSpec?.category)
+  add(ctx.briefSpec?.brand)
+  add(ctx.clientName)
+  add(ctx.title)
+  add(ctx.briefSpec?.hook)
+  for (const truth of listify(ctx.briefSpec?.brandTruths)) add(truth)
+  for (const asset of listify(ctx.briefSpec?.distinctiveAssets?.visual)) add(asset)
+  for (const asset of listify(ctx.briefSpec?.distinctiveAssets?.verbal)) add(asset)
+  for (const asset of listify(ctx.briefSpec?.distinctiveAssets?.ritual)) add(asset)
+  return Array.from(tokens)
 }
 function factLooksOnCategory(text: string, toks: string[]): boolean {
+  if (!toks.length) return true
   const s = (text || '').toLowerCase()
   return toks.some(t => s.includes(t))
 }
@@ -153,6 +202,13 @@ function filterFactsByCategory(
 ) {
   const toks = tokensFromCtx(ctx)
   return facts.filter(f => factLooksOnCategory(f.claim, toks))
+}
+
+function filterLinesByCategory(lines: string[], ctx: CampaignContext): string[] {
+  if (!lines.length) return []
+  const toks = tokensFromCtx(ctx)
+  if (!toks.length) return lines
+  return lines.filter(line => factLooksOnCategory(line, toks))
 }
 
 function classifyPrizeType(label: string): 'PRIZE_EXPERIENTIAL' | 'PRIZE_FINANCIAL' | 'GWP' | 'OTHER' {
@@ -485,9 +541,12 @@ export async function runFraming(ctx: CampaignContext) {
   } catch {}
 
   // Assured value flags
+  const typeToken = String(ctx.briefSpec?.typeOfPromotion || '').toUpperCase()
+  const cashbackSpec = ctx.briefSpec?.cashback || null
+  const cashbackGuaranteed = Boolean(cashbackSpec && cashbackSpec.assured !== false)
   const isCashback =
-    String(ctx.briefSpec?.typeOfPromotion || '').toUpperCase() === 'CASHBACK' ||
-    Boolean(ctx.briefSpec?.cashback) ||
+    (typeToken === 'CASHBACK' && (cashbackSpec ? cashbackSpec.assured !== false : true)) ||
+    cashbackGuaranteed ||
     Boolean((ctx.briefSpec as any)?.assuredValue)
 
   const assuredItems = Array.isArray((ctx.briefSpec as any)?.assuredItems)
@@ -525,10 +584,13 @@ export async function runFraming(ctx: CampaignContext) {
   const purchaseTriggerSignals = takeUnique(listify(brief.purchaseTriggers), 6)
   const channelSignals = takeUnique(listify(brief.media), 8)
   const brandTruthSignals = takeUnique(listify(brief.brandTruths), 6)
+  const visualAssetSignals = takeUnique(listify(brief.distinctiveAssets?.visual), 6)
+  const verbalAssetSignals = takeUnique(listify(brief.distinctiveAssets?.verbal), 6)
+  const ritualAssetSignals = takeUnique(listify(brief.distinctiveAssets?.ritual), 6)
   const assetSignals = takeUnique([
-    ...listify(brief.distinctiveAssets?.visual),
-    ...listify(brief.distinctiveAssets?.verbal),
-    ...listify(brief.distinctiveAssets?.ritual)
+    ...visualAssetSignals,
+    ...verbalAssetSignals,
+    ...ritualAssetSignals
   ], 9)
   const toneDoSignals = takeUnique(listify(brief.toneOfVoice?.do), 5)
   const toneDontSignals = takeUnique(listify(brief.toneOfVoice?.dont), 5)
@@ -615,23 +677,25 @@ export async function runFraming(ctx: CampaignContext) {
 
   const competitorNamesResearch = takeUnique((research?.competitors?.names as string[] | undefined) || [], 8)
   const retailerNamesResearch = takeUnique((research?.retailers?.names as string[] | undefined) || [], 8)
-  const researchBrandLines = formatFacts(research?.brand?.facts, 'Brand insight', 5)
-  const researchAudienceLines = formatFacts(research?.audience?.facts, 'Audience insight', 5)
-  const researchRetailerLines = formatFacts(research?.retailers?.facts, 'Retailer insight', 5)
-  const researchMarketLines = formatFacts(research?.market?.facts, 'Market insight', 5)
-  const researchCompetitorFactLines = formatFacts(research?.competitors?.facts, 'Competitor insight', 5)
-  const researchSignalLines = formatFacts(research?.signals?.facts, 'Signal', 4)
-  const promoSummaries = getCompetitorPromos(research)
-    .slice(0, 5)
-    .map(p => {
-      const head = truncate(String(p.headline || p.title || p.type || '').trim() || 'Promotion')
-      const typeStr = p.type ? `Type: ${String(p.type).toUpperCase()}` : null
-      const valStr = p.prizeValueHint ? `Value: ${p.prizeValueHint}` : null
-      const cadenceStr = p.cadence ? `Cadence: ${p.cadence}` : null
-      const summary = [typeStr, valStr, cadenceStr].filter(Boolean).join(' | ')
-      const brandName = String(p.brand || '').trim() || 'Unknown'
-      return summary ? `Promo insight: ${brandName} — ${head} (${summary})` : `Promo insight: ${brandName} — ${head}`
-    })
+  const researchBrandLines = filterLinesByCategory(formatFacts(research?.brand?.facts, 'Brand insight', 5), ctx)
+  const researchAudienceLines = filterLinesByCategory(formatFacts(research?.audience?.facts, 'Audience insight', 5), ctx)
+  const researchRetailerLines = filterLinesByCategory(formatFacts(research?.retailers?.facts, 'Retailer insight', 5), ctx)
+  const researchMarketLines = filterLinesByCategory(formatFacts(research?.market?.facts, 'Market insight', 5), ctx)
+  const researchCompetitorFactLines = filterLinesByCategory(formatFacts(research?.competitors?.facts, 'Competitor insight', 5), ctx)
+  const researchSignalLines = filterLinesByCategory(formatFacts(research?.signals?.facts, 'Signal', 4), ctx)
+  const promoSummaries = filterLinesByCategory(
+    getCompetitorPromos(research)
+      .map(p => {
+        const head = truncate(String(p.headline || p.title || p.type || '').trim() || 'Promotion')
+        const typeStr = p.type ? `Type: ${String(p.type).toUpperCase()}` : null
+        const valStr = p.prizeValueHint ? `Value: ${p.prizeValueHint}` : null
+        const cadenceStr = p.cadence ? `Cadence: ${p.cadence}` : null
+        const summary = [typeStr, valStr, cadenceStr].filter(Boolean).join(' | ')
+        const brandName = String(p.brand || '').trim() || 'Unknown'
+        return summary ? `Promo insight: ${brandName} — ${head} (${summary})` : `Promo insight: ${brandName} — ${head}`
+      }),
+    ctx
+  ).slice(0, 5)
 
   const benchmarkLines: string[] = []
   if (cbBench.sample) {
@@ -800,7 +864,7 @@ export async function runFraming(ctx: CampaignContext) {
       market_facts: [{ claim: 'string', sourceHint: 'Source: …' }],
       idea_core: ['string'],
       proposition_candidates: ['string'],
-      hooks: ['string (2–6 words)'],
+      hooks: ['string'],
       reasons_to_believe: ['string'],
       improvement_hypotheses: ['string'],
       prize_map: {
@@ -866,6 +930,15 @@ export async function runFraming(ctx: CampaignContext) {
     research_provided: true,
     do_not_research: true,
     prohibitions: allowHeroSuggestion ? [] : ['NO_HERO_PRIZE_SUGGESTION']
+  }
+
+  if (brandTruthSignals.length) {
+    meta.brand_truths = cap<string>([...brandTruthSignals, ...(meta.brand_truths || [])], 5)
+  }
+  meta.distinctive_assets = {
+    visual: cap<string>([...visualAssetSignals, ...(meta.distinctive_assets.visual || [])], 6),
+    verbal: cap<string>([...verbalAssetSignals, ...(meta.distinctive_assets.verbal || [])], 6),
+    ritual: cap<string>([...ritualAssetSignals, ...(meta.distinctive_assets.ritual || [])], 6),
   }
 
   if (prizePresence.prize_presence === 'BREADTH_ONLY') {
@@ -958,6 +1031,10 @@ export async function runFraming(ctx: CampaignContext) {
   } catch {}
 
   // ----- Prose composer -----
+  const categoryGuardLine = ctx.category
+    ? `Keep all facts on-category (${ctx.category}). Ignore irrelevant verticals.`
+    : 'Keep all facts anchored to the briefed category and retailer reality.'
+
   const proseSys = [
     'You are Ava + Clara. Produce decisive, commercial framing.',
     'Tone: senior, crisp, Australian plain-speak. Short sentences.',
@@ -974,7 +1051,10 @@ export async function runFraming(ctx: CampaignContext) {
     'If a major prize overlay is briefed, let it set theme/mood; cashback is the primary value driver/headline.',
     'Do not assume entry flows; if unclear, write “Entry: TBC with retailer ops.”',
     'Competitors must come from the brief or RESEARCH; otherwise discuss category norms.',
-    'Keep all facts on-category (desserts/chilled desserts/puddings/custard). Ignore generic competition content.',
+    categoryGuardLine,
+    'Brand Lens must reference 2–3 distinctive truths from the brief before layering wider category observations; never default to pour ritual alone.',
+    'Where the Demand Is must connect consumer demand, retailer realities, and macro category tensions with sourced facts.',
+    'Call out retailer/on-premise implications explicitly—staff limits, throughput, dwell time—so evaluation inherits the grounded context.',
     // Hero suggestion note (creative)
     allowHeroSuggestion
       ? 'You may suggest a tight hero overlay if it will meaningfully lift response; keep breadth visible.'
@@ -984,7 +1064,7 @@ export async function runFraming(ctx: CampaignContext) {
     'MANDATORY: In "Who It’s For & What Stops Them", name 2–3 audience mindsets with a job-to-be-done line each; include one sourced barrier.',
     'MANDATORY: In "Competitor Map", contrast approaches visible in RESEARCH.',
     'MANDATORY: In "Brand Lens", compact brand capsule using RESEARCH.brand (3–5 sentences).',
-    'MANDATORY: Hooks are 2–6 words; they may nod to overlay/IP mood but not replace the value.',
+    'MANDATORY: Hooks must be sharp, brand-locked, and keep the assured value visible; avoid vague slogans.',
     'If cashback is banded, say it is banded; do not invent thresholds.',
     'Use BENCHMARKS to position value vs typical.',
     'When discussing movie passes, write them as double passes by default; treat Family/Gold Class as variants in Hypotheses.',
@@ -1041,7 +1121,7 @@ export async function runFraming(ctx: CampaignContext) {
     'Brand Lens (truth, codes to lean/break)',
     'The Idea As It Stands',
     'Proposition Candidates',
-    'Hooks (2–6 words)',
+    'Hooks',
     'What We’d Lean On',
     'Hypotheses for Evaluation',
     '',
@@ -1056,7 +1136,7 @@ export async function runFraming(ctx: CampaignContext) {
 
   const proseUser = proseParts.filter(Boolean).join('\n')
 
-  const content = await chat({
+  let content = await chat({
     model,
     system: proseSys,
     messages: [{ role: 'user', content: proseUser }],
@@ -1065,6 +1145,8 @@ export async function runFraming(ctx: CampaignContext) {
     max_output_tokens: Number(process.env.FRAME_PROSE_TOKENS || 2200),
     meta: { scope: 'framing.prose', campaignId: ctx.id },
   })
+
+  content = await proofreadProse(String(content || ''), { scope: 'framing', campaignId: ctx.id, medium: 'plain' })
 
   return { content: String(content || '').trim(), meta }
 }

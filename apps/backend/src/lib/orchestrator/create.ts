@@ -6,6 +6,7 @@ import { runResearch, type ResearchPack } from '../research.js'
 import { scoreOffer, type OfferIQ } from '../offeriq.js'
 import type { FramingV2Meta } from './framing.js'
 import { resolveModel } from '../models.js'
+import { buildLawPrompt } from '../creative-laws.js'
 
 function rid() { return Math.random().toString(36).slice(2, 10) }
 
@@ -56,7 +57,8 @@ export async function runCreate(
   const type = String(spec?.typeOfPromotion || '').toUpperCase()
   const gwp = spec?.gwp || null
   const cashback = spec?.cashback || null
-  const assuredViaCashback = !!(type === 'CASHBACK' || cashback)
+  const hasCashback = Boolean(type === 'CASHBACK' || cashback)
+  const assuredViaCashback = hasCashback && Boolean(!cashback || cashback.assured !== false)
   const assuredViaGWP = !!(type === 'GWP' || gwp) && (gwp?.cap === 'UNLIMITED' || gwp?.cap == null)
   const isAssuredValue = !!(assuredViaCashback || assuredViaGWP)
 
@@ -77,7 +79,12 @@ export async function runCreate(
   // ---- BANNED MOTIFS from the brief (and known exemplars) ----
   const banned = collectBannedMotifs(ctx)
 
-  // ---- BRAND snapshot (facts only) ----
+  // ---- BRAND snapshot / anchors ----
+  const anchorLines = buildBriefAnchors(ctx)
+  const anchorBlock = anchorLines.length
+    ? ['BRIEF ANCHORS (non-negotiable):', ...anchorLines.map((line) => `- ${line}`)].join('\n')
+    : ''
+
   const brandFacts = [
     ctx.clientName ? `Brand: ${ctx.clientName}` : '',
     `Market: ${ctx.market || 'AU'}`,
@@ -248,11 +255,18 @@ export async function runCreate(
   ].join('\n')
 
   // ---- Systems ----
+  const anchorGuard = anchorLines.length
+    ? 'Respect the BRIEF ANCHORS supplied by the user. They define the baseline mechanic/value; you may only enhance or clarify them.'
+    : 'If the user supplies BRIEF ANCHORS, treat them as non-negotiable baseline mechanics/value.'
+
   const sysGreenfield = [
     'You are MAKERS, a senior creative duo inventing net-new, brand-first CAMPAIGN PLATFORMS for grocery brands.',
     'Write in Adam Ferrier’s voice: evidence-led, sharp, specific, human. No clichés. No marketing bingo.',
+    MARK_LAW_PROMPT_CREATE,
+    'When you cite or bend a law, reference its ID (e.g., L5.3, L9.2).',
     'Start from BRAND TRUTH → AUDIENCE TENSION → SEASONAL MOMENT → CATEGORY CODES. Then craft the idea.',
     'Do NOT start from mechanics. Mechanics serve the idea.',
+    anchorGuard,
     '',
     intensityBlock(intensity),
     gateLine,
@@ -300,6 +314,9 @@ export async function runCreate(
   const sysBuild = [
     'You are MAKERS, generating retail-ready ROUTES but keep the same idea anchor.',
     'Write in Adam Ferrier’s voice: evidence-led, sharp, specific.',
+    MARK_LAW_PROMPT_CREATE,
+    'Reference law IDs whenever you justify ambition, ops, or risk decisions.',
+    anchorGuard,
     intensityBlock(intensity),
     gateLine,
     '',
@@ -339,6 +356,7 @@ export async function runCreate(
     '',
     'BRAND SNAPSHOT (facts):',
     brandFacts || '_none_',
+    anchorBlock ? `\n${anchorBlock}` : '',
     framingTip ? `\n${framingTip}` : '',
     '',
     'RESEARCH SNAPSHOT (authoritative hints; do not fabricate):',
@@ -353,6 +371,7 @@ export async function runCreate(
     '- Start brand-first; do NOT start from mechanics.',
     '- Adhere strictly to POLICY GATES, PRIZE DEPTH ENGINE and NOVELTY rules above.',
     '- Keep store burden at zero. Central fulfilment/winner contact.',
+    '- Reference relevant law IDs (e.g., L5.3, L9.2) when defending ambition, fairness, or retailer feasibility.',
   ].join('\n')
 
   // ---- Generate candidates (K) and apply novelty screen ----
@@ -508,34 +527,93 @@ function coerceStrList(x: any): string[] {
   return []
 }
 
+function buildBriefAnchors(ctx: CampaignContext): string[] {
+  const spec = ctx.briefSpec || {}
+  const anchors: string[] = []
+
+  const objective = String(spec.primaryObjective || '').trim()
+  if (objective) {
+    anchors.push(`Primary objective: ${objective}. Every platform must ladder to this exact outcome.`)
+  }
+
+  const mechanic = String(spec.mechanicOneLiner || spec.entryMechanic || '').trim()
+  if (mechanic) {
+    anchors.push(`Baseline mechanic: ${mechanic}. Keep this entry structure; only reduce friction or clarify copy.`)
+  }
+
+  const proofType = String(spec.proofType || '').trim()
+  if (proofType && proofType.toUpperCase() !== 'UNKNOWN') {
+    anchors.push(`Proof/entry requirement: ${proofType}. Do not add extra hoops beyond this.`)
+  }
+
+  const rewardPosture = String(spec.rewardPosture || '').trim().toUpperCase()
+  const gwp = (spec as any).gwp || null
+  const assuredItems = Array.isArray(spec.assuredItems) ? spec.assuredItems.filter(Boolean) : []
+  const assuredValueParts: string[] = []
+  if (gwp?.item) assuredValueParts.push(String(gwp.item))
+  if (assuredItems.length) assuredValueParts.push(assuredItems.join(', '))
+  if (rewardPosture === 'ASSURED' && !assuredValueParts.length && !gwp) {
+    assuredValueParts.push('Guaranteed take-home reward (ASSURED posture).')
+  }
+  if (assuredValueParts.length) {
+    const trigger = gwp?.triggerQty ? ` triggered by ${gwp.triggerQty} purchase${gwp.triggerQty === 1 ? '' : 's'}` : ''
+    anchors.push(
+      `Assured reward: ${assuredValueParts.join(' + ')}${trigger}. Keep the same guaranteed value; you may only layer upgrades on top.`
+    )
+  }
+
+  const cashback = (spec as any).cashback || null
+  if (cashback) {
+    const amtLabel = formatCashback(cashback)
+    anchors.push(`Cashback promise: ${amtLabel}. Maintain certainty and the same (or richer) math.`)
+  }
+
+  return anchors
+}
+
+function formatCashback(cb: any): string {
+  if (!cb) return 'cashback'
+  if (typeof cb.amount === 'number') {
+    if (cb.amount > 0 && cb.amount <= 1) {
+      return `${Math.round(cb.amount * 100)}% ${cb.currency || ''}`.trim()
+    }
+    return `${cb.currency || ''}${cb.amount}`.trim()
+  }
+  if (cb.amountLabel) return String(cb.amountLabel)
+  return 'cashback'
+}
+
 /** Collect phrases/terms we want to forbid reusing. */
 function collectBannedMotifs(ctx: CampaignContext): string[] {
-  const b = ctx.briefSpec || {}
+  const spec = ctx.briefSpec || {}
   const out = new Set<string>()
 
-  // From briefSpec (common fields)
-  addMaybe(out, b.heroPrize)
-  addMany(out, b.runnerUps)
-  addMaybe(out, b.mechanicOneLiner)
-  addMaybe(out, (b as any).mechanic)
-  addMaybe(out, (b as any).prize)
-  addMaybe(out, (b as any).examplePrize)
-  addMany(out, (b as any).examplePrizes)
-  addMaybe(out, (b as any).exampleMechanic)
-  addMany(out, (b as any).examples)
-  addMaybe(out, (b as any).tagline)
-  addMany(out, (b as any).exemplarHooks)
+  // Allow teams to explicitly mark banned motifs in the brief.
+  addMany(out, (spec as any).bannedMotifs)
 
-  // Known leak motifs
-  ;['racehorse', 'share in a racehorse', 'The Ghan', 'Ghan', 'Derby', 'stable', 'stud', 'Sir Guinness']
-    .forEach(s => addMaybe(out, s))
+  // Only treat "example" style fields as off-limits; core brief inputs should remain usable.
+  addMaybe(out, (spec as any).examplePrize)
+  addMany(out, (spec as any).examplePrizes)
+  addMaybe(out, (spec as any).exampleMechanic)
+  addMany(out, (spec as any).examples)
+  addMany(out, (spec as any).exemplarHooks)
+  addMaybe(out, (spec as any).taglineExample)
 
-  // Title sometimes contains a motif
+  // Title can leak a prior campaign name.
   addMaybe(out, ctx.title)
 
+  // Known leak motifs are safe to ban unless the brief explicitly uses them.
+  const specText = JSON.stringify(spec ?? {}).toLowerCase()
+  const leakMotifs = ['racehorse', 'share in a racehorse', 'the ghan', 'ghan', 'derby', 'stable', 'stud', 'sir guinness']
+  for (const motif of leakMotifs) {
+    const needle = motif.toLowerCase()
+    if (!needle || specText.includes(needle)) continue
+    addMaybe(out, motif)
+  }
+
   const cleaned = Array.from(out)
-    .map(s => String(s || '').trim())
-    .filter(s => s && s.length >= 3)
+    .map((s) => String(s || '').trim())
+    .filter((s) => s && s.length >= 3)
     .slice(0, 50)
 
   return dedupeLower(cleaned)
@@ -604,3 +682,45 @@ function prettifyCreateOutput(src: string): string {
   // Trim whitespace
   return s.trim()
 }
+const LAW_CUES_CREATE = [
+  'L0.1',
+  'L0.3',
+  'L1.1',
+  'L2.1',
+  'L2.2',
+  'L2.3',
+  'L3.2',
+  'L3.3',
+  'L3.4',
+  'L3.6',
+  'L4.1',
+  'L4.2',
+  'L4.4',
+  'L5.1',
+  'L5.2',
+  'L5.3',
+  'L5.4',
+  'L5.5',
+  'L5.6',
+  'L5.7',
+  'L5.8',
+  'L5.9',
+  'L5.10',
+  'L6.1',
+  'L6.2',
+  'L7.1',
+  'L7.2',
+  'L8.1',
+  'L8.2',
+  'L9.1',
+  'L9.2',
+  'L9.3',
+  'L9.4',
+  'L9.5',
+  'L10.1',
+  'L10.2',
+  'L12.2',
+  'L12.3',
+] as const
+
+const MARK_LAW_PROMPT_CREATE = buildLawPrompt('create', LAW_CUES_CREATE)

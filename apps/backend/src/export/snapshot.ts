@@ -111,6 +111,8 @@ export async function collectExportSnapshot(campaignId: string, sections: Export
 
   const briefSnapshot = renderBriefSnapshot(ctx)
 
+  const sparkSeed = (campaign.brief?.assets as any)?.__spark || null
+
   const snapshot: ExportSnapshot & {
     evaluationMeta?: any
     opinionMeta?: any
@@ -190,6 +192,8 @@ export async function collectExportSnapshot(campaignId: string, sections: Export
   if (snapshot.narratives.strategist) {
     snapshot.narratives.strategist.meta = strategistMeta
   }
+
+  ;(snapshot as any).spark = sparkSeed
 
   return snapshot
 }

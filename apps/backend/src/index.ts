@@ -16,6 +16,8 @@ import synthesisRouter from './routes/core-synthesis.js'
 import strategistRouter from './routes/core-strategist.js'
 import heuristicsRouter from './routes/heuristics.js'
 import campaignDebugRouter from './routes/campaign-debug.js'
+import promoBuilderRouter from './routes/promo-builder.js'
+import sparkRouter from './routes/spark.js'
 
 import opinionRoutes from './routes/opinion.js'
 import judgeRouter from './routes/judge.js'
@@ -56,6 +58,8 @@ api.use(synthesisRouter)
 api.use(strategistRouter)
 api.use(heuristicsRouter)
 api.use(campaignDebugRouter)
+api.use(promoBuilderRouter)
+api.use(sparkRouter)
 
 // Move these INSIDE the same api router so order is deterministic
 api.use(opinionRoutes)

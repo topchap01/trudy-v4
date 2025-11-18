@@ -7,6 +7,7 @@ import { getPlaybookSnippets } from '../knowledge-grid.js'
 import { polishText } from '../polish.js'
 import { buildCampaignStyleSpec, pickStructure, enforceLexicon, stripAvoided } from '../style-spec.js'
 import type { ResearchPack } from '../research.js'
+import { proofreadProse } from '../proofreader.js'
 
 type StrategistInputs = {
   framing: string
@@ -17,6 +18,7 @@ type StrategistInputs = {
   evaluationMeta?: any
   customPrompts?: string[]
   deepDive?: boolean
+  mode?: 'CORE' | 'ALT'
 }
 
 const joinWithAnd = (values: string[]): string => {
@@ -96,6 +98,7 @@ export async function runStrategist(ctx: CampaignContext, inputs: StrategistInpu
     process.env.MODEL_DEFAULT,
     'gpt-4o'
   )
+  const strategistMode: 'CORE' | 'ALT' = inputs.mode === 'ALT' ? 'ALT' : 'CORE'
 
   const spec: any = ctx.briefSpec || {}
   const rules = await loadCampaignRules(ctx)
@@ -105,13 +108,15 @@ export async function runStrategist(ctx: CampaignContext, inputs: StrategistInpu
   const retailerLine = retailers.length ? joinWithAnd(retailers.slice(0, 6)) : 'n/a'
 
   const promoType = rules.promotionType
+  const cashbackSpec = spec.cashback || null
+  const cashbackGuaranteed = Boolean(cashbackSpec && cashbackSpec.assured !== false)
   const assuredItemsList = Array.isArray(spec.assuredItems)
     ? spec.assuredItems.map((item: any) => String(item || '').trim()).filter(Boolean)
     : (typeof spec.assuredItems === 'string'
         ? String(spec.assuredItems).split(/[,•\n]+/).map((item) => item.trim()).filter(Boolean)
         : [])
   const assuredValue = Boolean(
-    spec.cashback ||
+    cashbackGuaranteed ||
     spec.gwp ||
     spec.assuredValue ||
     assuredItemsList.length > 0
@@ -144,6 +149,33 @@ export async function runStrategist(ctx: CampaignContext, inputs: StrategistInpu
   const friction = evaluationMeta.scoreboard?.friction || null
   const trade = evaluationMeta.scoreboard?.retailerReadiness || null
   const researchLines = gatherInsightLines(evaluationMeta.ui?.research || evaluationMeta.research || null, 3)
+  const tradeOpportunity = evaluationMeta.ui?.tradeOpportunity || null
+  const sparkPayload = (ctx as any).spark || spec.__spark || null
+  const sparkAnalysis = sparkPayload?.analysis || null
+  const sparkHookOptions = Array.isArray(sparkPayload?.hookPlayground?.options)
+    ? sparkPayload.hookPlayground.options
+        .map((opt: any) => (typeof opt?.headline === 'string' ? opt.headline.trim() : ''))
+        .filter(Boolean)
+    : []
+  const sparkCadenceLines = Array.isArray(sparkPayload?.hookPlayground?.cadence)
+    ? sparkPayload.hookPlayground.cadence
+        .map((line: any) => (typeof line === 'string' ? line.trim() : ''))
+        .filter(Boolean)
+    : []
+  const sparkSummaryLine = typeof sparkAnalysis?.summary === 'string' ? sparkAnalysis.summary.trim() : ''
+  const sparkAudienceLine = typeof sparkAnalysis?.audience === 'string' ? sparkAnalysis.audience.trim() : ''
+  const sparkCadenceNarrative = typeof sparkAnalysis?.cadence === 'string' ? sparkAnalysis.cadence.trim() : ''
+  const sparkTensionLine = Array.isArray(sparkAnalysis?.tensions)
+    ? sparkAnalysis.tensions
+        .map((item: any) => (typeof item === 'string' ? item.trim() : ''))
+        .filter(Boolean)
+        .slice(0, 2)
+        .join(' | ')
+    : ''
+  const sparkTradeLine =
+    (typeof sparkAnalysis?.trade?.reward === 'string' && sparkAnalysis.trade.reward.trim())
+      ? sparkAnalysis.trade.reward.trim()
+      : ''
 
   const heroPref = ctx.warRoomPrefs?.allowHeroOverlay
   const forbidHero = Boolean(heroPref === false || evaluationMeta.debug?.guards?.forbidHeroPrize || evaluationMeta.ui?.guards?.forbidHeroPrize)
@@ -161,27 +193,37 @@ export async function runStrategist(ctx: CampaignContext, inputs: StrategistInpu
   contextLines.push(`Campaign: ${safe(ctx.clientName) || spec.brand || 'Unknown'} — ${safe(ctx.title) || 'Untitled'}`)
   contextLines.push(`Market: ${safe(ctx.market) || 'AU'} (code ${rules.marketCode}) | Category: ${safe(ctx.category) || 'n/a'} | Position: ${safe(ctx.brandPosition) || 'UNKNOWN'}`)
   contextLines.push(`Promotion type: ${promoType} | Assured value: ${assuredValue ? 'Yes' : 'No'}`)
+  contextLines.push(`Strategist mode: ${strategistMode}`)
   contextLines.push(`Retailers: ${retailerLine}`)
   if (ctx.audienceProfile?.summary) contextLines.push(`Primary audience: ${safe(ctx.audienceProfile.summary)}`)
   if (Array.isArray(ctx.audienceProfile?.signals) && ctx.audienceProfile!.signals.length) {
     contextLines.push(`Audience cues: ${ctx.audienceProfile!.signals.slice(0, 3).join(', ')}`)
   }
+  if (sparkSummaryLine) contextLines.push(`Spark summary: ${sparkSummaryLine}`)
+  if (sparkAudienceLine) contextLines.push(`Spark audience cue: ${sparkAudienceLine}`)
+  if (sparkTensionLine) contextLines.push(`Spark tensions: ${sparkTensionLine}`)
+  if (sparkHookOptions.length) contextLines.push(`Spark hook cues: ${sparkHookOptions.slice(0, 3).join(' | ')}`)
+  if (sparkCadenceNarrative || sparkCadenceLines.length) {
+    const cadenceCue = sparkCadenceNarrative || sparkCadenceLines.slice(0, 2).join(' | ')
+    contextLines.push(`Spark cadence cue: ${cadenceCue}`)
+  }
+  if (sparkTradeLine) contextLines.push(`Spark trade suggestion: ${sparkTradeLine}`)
   if (convenienceFocus) {
     contextLines.push('Secondary mode: plan for the emergency dessert dash via convenience — no staff intervention, all on-the-go friendly comms.')
   }
   if (heroPrize) contextLines.push(`Hero prize: ${heroPrize}${heroPrizeCount ? ` x${heroPrizeCount}` : ''}`)
   if (totalWinners != null) contextLines.push(`Total winners (brief): ${totalWinners}${winnersPerDay ? ` (~${winnersPerDay.toFixed(1)} per day)` : ''}`)
-  if (assuredValue && (spec.cashback || assuredItemsList.length)) {
+  if (assuredValue && (cashbackGuaranteed || assuredItemsList.length)) {
     const cbPercent =
-      spec.cashback && typeof (spec.cashback as any).percent === 'number' && !Number.isNaN((spec.cashback as any).percent)
-        ? Number((spec.cashback as any).percent)
+      cashbackSpec && typeof (cashbackSpec as any).percent === 'number' && !Number.isNaN((cashbackSpec as any).percent)
+        ? Number((cashbackSpec as any).percent)
         : null
-    const descriptor = spec.cashback
-      ? (spec.cashback.amount != null
-          ? `$${spec.cashback.amount} cashback`
+    const descriptor = cashbackGuaranteed && cashbackSpec
+      ? (cashbackSpec.amount != null
+          ? `$${cashbackSpec.amount} cashback`
           : (cbPercent != null
               ? `${cbPercent}% cashback`
-              : (Array.isArray(spec.cashback.bands) && spec.cashback.bands.length ? 'banded cashback' : 'cashback guarantee')))
+              : (Array.isArray(cashbackSpec.bands) && cashbackSpec.bands.length ? 'banded cashback' : 'cashback guarantee')))
       : assuredItemsList.length
         ? assuredItemsList.slice(0, 3).join(', ')
         : 'guaranteed reward'
@@ -203,6 +245,9 @@ export async function runStrategist(ctx: CampaignContext, inputs: StrategistInpu
   if (rewardShape) contextLines.push(`Reward shape: ${safe(rewardShape.status)} — ${safe(rewardShape.why)}`)
   if (friction) contextLines.push(`Friction: ${safe(friction.status)} — ${safe(friction.why)}`)
   if (trade) contextLines.push(`Retail readiness: ${safe(trade.status)} — ${safe(trade.why)}`)
+  if (tradeOpportunity?.flag) {
+    contextLines.push(`Trade gap flagged: ${tradeOpportunity.why || 'Retailers named but no sell-in hook.'}`)
+  }
   if (entryLocked) contextLines.push('Entry mechanic is locked; only alter if a new value play demands it.')
   if (forbidHero) contextLines.push('Hero overlay is off the table—stretch breadth, cadence, or assured value instead.')
   else if (heroPref === true) contextLines.push('Hero overlay encouraged when it builds fame without breaking ops or fairness.')
@@ -219,6 +264,23 @@ export async function runStrategist(ctx: CampaignContext, inputs: StrategistInpu
   if (rules.guardrails.allStockists) contextLines.push('Scale guardrail: campaign must work for all stockists—avoid retailer-exclusive mechanics.')
   if (rules.founder.notes.length) contextLines.push(...rules.founder.notes.map((note) => `Founder guidance: ${note}`))
   contextLines.push('Cadence must be dramatised through consumer-facing comms, not in-store labour.')
+
+  const sparkDirectiveLines: string[] = []
+  if (sparkHookOptions.length) {
+    sparkDirectiveLines.push(`Interrogate Spark hook contenders before inventing new ones: ${sparkHookOptions.slice(0, 3).join(' | ')}.`)
+  }
+  if (sparkCadenceNarrative) {
+    sparkDirectiveLines.push(`Cadence promise from Spark: ${sparkCadenceNarrative}. Keep the rhythm intact or justify the shift with numbers.`)
+  } else if (sparkCadenceLines.length) {
+    sparkDirectiveLines.push(`Cadence cues to uphold: ${sparkCadenceLines.slice(0, 2).join(' | ')}.`)
+  }
+  if (sparkAudienceLine) {
+    sparkDirectiveLines.push(`Every scenario must overtly serve ${sparkAudienceLine}.`)
+  }
+  if (sparkTensionLine) {
+    sparkDirectiveLines.push(`Answer these live tensions: ${sparkTensionLine}.`)
+  }
+  const sparkDirective = sparkDirectiveLines.join('\n')
 
   const speechGuard = 'Write in grounded Australian English. Plain speech, no marketing clichés, no hype words (especially “zeitgeist”, “crescendo”, or “game changer”).'
   const personaReminder = ctx.audienceProfile?.summary
@@ -246,7 +308,13 @@ export async function runStrategist(ctx: CampaignContext, inputs: StrategistInpu
   const framingCue = (inputs.framing || '').split('\n').slice(0, 4).join(' ')
   const evaluationCue = (inputs.evaluation || '').split('\n').slice(0, 4).join(' ')
 
-  const isCashbackAssured = assuredValue && Boolean(spec.cashback)
+  const isCashbackAssured = Boolean(cashbackGuaranteed && assuredValue)
+
+  const heroOverlayBriefed = Boolean(spec.majorPrizeOverlay || heroPrize)
+  const heroOverlayAllowed = !forbidHero && (heroOverlayBriefed || heroPref === true)
+  const brandWorldHint = ctx.category
+    ? `${ctx.category.toLowerCase()} occasion`
+    : `${brandAlias} world`
 
   const shareLabel = assuredValue
     ? 'Scenario — Assured theatre'
@@ -256,7 +324,7 @@ export async function runStrategist(ctx: CampaignContext, inputs: StrategistInpu
   const cadenceLabel = isCashbackAssured ? 'Scenario — Proof pathway' : 'Scenario — Cadence burst'
   const heroLabel = isCashbackAssured
     ? 'Scenario — Liability & partners'
-    : (forbidHero ? 'Scenario — Retail premiere stretch' : 'Scenario — Hero overlay')
+    : (heroOverlayAllowed ? 'Scenario — Hero overlay' : 'Scenario — Brand stretch')
   const prizeText = [spec?.heroPrize, Array.isArray(spec?.runnerUps) ? spec.runnerUps.join(' ') : '', ctx.title]
     .filter(Boolean)
     .join(' ')
@@ -269,18 +337,36 @@ export async function runStrategist(ctx: CampaignContext, inputs: StrategistInpu
     : (isDoublePassReward || prizeFeelsTicket
         ? `You already issue double passes (${totalWinners ?? 'n/a'} winners from ${ticketPool ?? 'n/a'} tickets). Amplify the shared value without touching the prize count—tighten comms, CRM rhythm, or proof points that dramatise two seats filled every day.`
         : prizeFeelsCredit
-          ? 'Turn the prize pool into an earned wishlist moment: show how daily product-credit drops land, highlight the home-upgrade storytelling, and use CRM proof to dramatise winners without inventing new prize math.'
+          ? 'Turn the prize pool into brand-right credit (tabs, merch, festival funds) without drifting into home makeovers. Show the daily drop cadence, proof messages, and how cost stays flat.'
           : 'Recast the reward so it genuinely feels shared (paired prizes, co-created experiences) without rewriting the prize budget. Be explicit about what changes, what it costs, and how fairness stays intact.')
   const cadenceInstruction = isCashbackAssured
     ? 'Map the proof path: purchase verification, interim comms (claim submitted, approved, paid), payout timing, and who adjudicates. Keep it web-form simple—no extra portals, phased uploads, or daily bursts.'
     : 'Test an hourly or daily winner burst. Explain why it matters now, what it costs operationally, and how we monitor it.'
   const heroInstruction = isCashbackAssured
     ? `Detail how ${brandAlias} funds and reconciles the cashback pool, handles finance/ops partners, and keeps compliance tight without inventing new prizes. Spell out legal guardrails and the comms that carry claimants through to payment.`
-    : (forbidHero
-        ? 'Swap the hero overlay for retailer-led premiere nights (one per key state). Use retailer CRM invites, deliver turnkey assets, keep staff lift at zero, and show cost/ROI vs the shared ticket pool.'
-        : prizeFeelsTicket
-          ? 'Design a tight hero overlay (e.g., three hero prizes) and explain how to fund it without destroying breadth.'
-          : `Design a hero tier that proves ${brandAlias} solves whole-home upgrades (e.g., $10K makeover packs). Spell out funding reallocations, retailer storytelling, and why fairness stays intact.`)
+    : (heroOverlayAllowed
+        ? (prizeFeelsTicket
+            ? 'Design a tight hero overlay (e.g., three hero prizes) and explain how to fund it without destroying breadth. Keep it in the pub/night-out world and show how zero staff lift is maintained.'
+            : `If you add a hero tier, keep it inside the ${brandWorldHint}: think high-fidelity pub experiences, festival routes, or Guinness ritual upgrades. Detail budget offsets, why fairness holds, and never wander into household or unrelated lifestyle prizes.`)
+        : `Hero overlay is not briefed. Use this slot to make the existing reward feel famous inside the ${brandWorldHint}: deepen the venue ritual, dial up cadence proof, or weaponise retailer CRM. No new prize tiers or off-category giveaways.`)
+
+  const tradeCue = tradeOpportunity?.flag
+    ? 'One scenario must introduce a retailer incentive that keeps store labour at zero.'
+    : ''
+  const scenarioDirective =
+    strategistMode === 'ALT'
+      ? `ALT MODE — deliver three divergent plays: (1) reframe the value or assurance, (2) reinvent cadence/odds, (3) retailer/ops stretch. No overlapping mechanics or hooks. ${tradeCue}`.trim()
+      : `Write exactly three scenario paragraphs followed by one measurement line. Each paragraph is 3–4 sentences, no bullet points. Use the labels below exactly and quote the numbers that matter. ${tradeCue}`.trim()
+
+  const measurementDirective =
+    strategistMode === 'ALT'
+      ? 'After the scenarios, add a blank line and write “Measurement — …” naming the boldest metric we must validate for the variants.'
+      : 'After the scenarios, add a blank line and write “Measurement — …” naming the single metric we watch first. If a scenario needs extra budget, state the offset.'
+
+  const summaryDirective =
+    strategistMode === 'ALT'
+      ? 'Then add another blank line and write “Summary” followed by three bullet points (use “- ”) that tie each variant to its commercial lever.'
+      : 'Then add another blank line and write “Summary” followed by three bullet points (use “- ”) that capture the headline action from each scenario.'
 
   const prompt = `You are the Strategist: a senior promo architect who pressure-tests mechanics before the CMO sees them.\n\n` +
     'Context:\n' + contextLines.map((line) => `- ${line}`).join('\n') + '\n' +
@@ -288,7 +374,9 @@ export async function runStrategist(ctx: CampaignContext, inputs: StrategistInpu
     (evaluationCue ? `Evaluation cue: ${evaluationCue}\n` : '') +
     'Brief snapshot (compressed): ' + briefSnapshot.replace(/\s+/g, ' ').slice(0, 320) + '\n\n' +
     `${personaToneBlock}\n` +
-    'Write exactly three scenario paragraphs followed by one measurement line. Each paragraph is 3–4 sentences, no bullet points. Use the labels below exactly and quote the numbers that matter.\n' +
+    (sparkDirective ? `${sparkDirective}\n` : '') +
+    `${scenarioDirective}\n` +
+    'Each scenario must open with the behavioural reason it will move the shopper before you describe the mechanic.\n' +
     `${shareLabel} — ${shareInstruction}\n` +
     `${cadenceLabel} — ${cadenceInstruction}\n` +
     `${heroLabel} — ${heroInstruction}\n` +
@@ -296,8 +384,8 @@ export async function runStrategist(ctx: CampaignContext, inputs: StrategistInpu
       ? 'Guardrail: do not invent partial rebates, hero overlays, or bursts that are absent in the brief—keep value identical and focus on clarity, compliance, and long-tail fulfilment.\n'
       : 'Guardrail: never recommend reverting to single-admit tickets; protect the shared experience even if the headline winner count halves.\n') +
     'Do not propose staff-run amplification, in-store kiosks, or terminals — your scenarios must run off existing consumer communications and zero store labour.\n' +
-    'After the scenarios, add a blank line and write “Measurement — …” naming the single metric we watch first. If a scenario needs extra budget, state the offset. Reference OfferIQ, benchmarks, or research when useful.\n' +
-    'Then add another blank line and write “Summary” followed by three bullet points (use “- ”) that capture the headline action from each scenario.'
+    `${measurementDirective} Reference OfferIQ, benchmarks, or research when useful.\n` +
+    `${summaryDirective}`
 
   const response = await chat({
     model,
@@ -314,5 +402,6 @@ export async function runStrategist(ctx: CampaignContext, inputs: StrategistInpu
   let cleaned = polishText(narrative.trim(), { locale: 'en-AU' })
   cleaned = stripAvoided(cleaned, style)
   cleaned = enforceLexicon(cleaned, style)
+  cleaned = await proofreadProse(cleaned, { scope: strategistMode === 'ALT' ? 'strategist.alt' : 'strategist', campaignId: ctx.id, medium: 'markdown' })
   return cleaned
 }

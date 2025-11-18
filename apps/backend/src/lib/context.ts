@@ -47,7 +47,14 @@ export type BriefSpec = {
   media?: string[]
 
   // Type-specific payloads
-  gwp?: { item?: string | null; triggerQty?: number | null; cap?: 'UNLIMITED' | number | null }
+  gwp?: {
+    item?: string | null
+    triggerQty?: number | null
+    cap?: 'UNLIMITED' | number | null
+    rrp?: number | null
+    netCost?: number | null
+    value?: number | null
+  }
   cashback?: {
     amount?: number | null
     percent?: number | null
@@ -58,6 +65,10 @@ export type BriefSpec = {
     mode?: string | null
     // NEW — banded cashback
     headline?: string | null
+    assured?: boolean | null
+    odds?: string | null
+    basePayout?: number | null
+    topPayout?: number | null
     bands?: Array<{
       min?: number | null
       max?: number | null
@@ -77,6 +88,14 @@ export type BriefSpec = {
   referral?: { reward?: string | null; twoSided?: boolean }
   sampling?: { channel?: string | null; volume?: string | null }
   tradeIncentiveSpec?: { audience?: string | null; reward?: string | null }
+  builderMetadata?: {
+    runnerUps?: Array<{
+      prize?: string | null
+      qty?: number | null
+      value?: string | null
+      retailers?: string | null
+    }>
+  }
 
   // Legacy/other supportive fields we still respect
   primaryKpi?: string
@@ -130,6 +149,7 @@ export type BriefSpec = {
   totalWinners?: number | string | null
   cadenceCopy?: string | null
   rewardUnit?: 'SINGLE' | 'DOUBLE' | string | null
+  prizePoolValue?: number | string | null
   ipTieIn?: {
     franchise?: string | null
     theme?: string | null
@@ -144,6 +164,7 @@ export type BriefSpec = {
   mechanicTypes?: any[]
   visuals?: any[]
   observed?: Record<string, any>
+  __spark?: any
 
   [key: string]: any
 }
@@ -199,6 +220,7 @@ export type CampaignContext = {
   warRoomPrefs?: WarRoomPrefs
   activationProfile: ActivationProfile
   audienceProfile: AudienceProfile
+  spark?: any
 }
 
 // ---------- helpers ----------
@@ -397,9 +419,18 @@ function normalizeBrief(input: any, row: Campaign): BriefSpec {
       item: nonEmptyOrNull(p.gwp.item ?? null),
       triggerQty: toNumOrNull(p.gwp.triggerQty),
       cap: (p.gwp.cap === 'UNLIMITED') ? 'UNLIMITED' : toNumOrNull(p.gwp.cap),
+      rrp: toNumOrNull((p.gwp as any).rrp ?? (p.gwp as any).value ?? null),
+      netCost: toNumOrNull((p.gwp as any).netCost ?? (p.gwp as any).cost ?? null),
+      value: toNumOrNull((p.gwp as any).value ?? null),
     }
   }
+  const assuredValueInput = (p as any).assuredValue
+  const assuredValueExplicit = typeof assuredValueInput === 'boolean' ? assuredValueInput : null
+  let cashbackAssuredExplicit: boolean | null = null
+
   if (p.cashback) {
+    const rawCb = p.cashback as any
+    cashbackAssuredExplicit = typeof rawCb?.assured === 'boolean' ? rawCb.assured : null
     type CashBackBand = {
       minPrice: number | null
       maxPrice: number | null
@@ -440,6 +471,10 @@ function normalizeBrief(input: any, row: Campaign): BriefSpec {
       processingDays: toNumOrNull((p.cashback as any).processingDays),
       mode: nonEmptyOrNull((p.cashback as any).mode ?? null),
       headline: nonEmptyOrNull((p.cashback as any).headline ?? null),
+      assured: cashbackAssuredExplicit ?? true,
+      odds: nonEmptyOrNull((p.cashback as any).odds ?? null),
+      basePayout: toNumOrNull((p.cashback as any).basePayout),
+      topPayout: toNumOrNull((p.cashback as any).topPayout),
       bands,
     }
   }
@@ -487,12 +522,24 @@ function normalizeBrief(input: any, row: Campaign): BriefSpec {
   p.brandNotes = nonEmptyOrNull(p.brandNotes ?? null)
 
   // NEW — Promotion shape & ops
-  p.assuredValue = toBool(p.assuredValue)
+  p.assuredValue = toBool(assuredValueInput)
   p.assuredItems = toArray(p.assuredItems)
   {
     const mpo = (p as any).majorPrizeOverlay
     p.majorPrizeOverlay = typeof mpo === 'boolean' ? mpo : nonEmptyOrNull(mpo ?? null)
   }
+  const gwpAssured = Boolean(
+    p.gwp &&
+    (p.gwp.cap === 'UNLIMITED' || p.gwp.cap == null)
+  )
+  const cashbackAssured =
+    Boolean(p.cashback && (p.cashback.assured !== false))
+  const derivedAssured =
+    assuredValueExplicit !== null
+      ? assuredValueExplicit
+      : (cashbackAssured || gwpAssured)
+  p.assuredValue = derivedAssured
+
   p.rewardPosture = normalizeRewardPosture((p as any).rewardPosture ?? p.rewardPosture ?? null, p.assuredValue)
   p.proofType = nonEmptyOrNull(p.proofType ?? null) as any
   p.processingTime = nonEmptyOrNull(p.processingTime ?? null) as any
@@ -548,6 +595,7 @@ function normalizeBrief(input: any, row: Campaign): BriefSpec {
   p.rewardUnit = (typeof (p as any).rewardUnit === 'string' && (p as any).rewardUnit.trim())
     ? (p as any).rewardUnit.trim().toUpperCase()
     : null
+  p.prizePoolValue = toNumOrNull((p as any).prizePoolValue ?? p.prizePoolValue ?? null)
   if ((p as any).ipTieIn && typeof (p as any).ipTieIn === 'object') {
     const ip = (p as any).ipTieIn
     const ipNormalized = {
@@ -830,6 +878,8 @@ export function deriveAudienceProfile(spec: BriefSpec): AudienceProfile {
 // ---------- context builders ----------
 export function buildCampaignContext(row: Campaign & { brief?: Brief | null }): CampaignContext {
   const spec = normalizeBrief(row.brief?.parsedJson, row)
+  const briefAssets = (row.brief?.assets as any) || null
+  const sparkPayload = briefAssets?.__spark || null
 
   const start = (spec.startDate ?? null) as string | null
   const end = (spec.endDate ?? null) as string | null
@@ -857,6 +907,7 @@ export function buildCampaignContext(row: Campaign & { brief?: Brief | null }): 
     warRoomPrefs: readWarRoomPrefsFromBrief(row.brief),
     activationProfile,
     audienceProfile,
+    spark: sparkPayload,
   }
 }
 

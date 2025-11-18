@@ -176,19 +176,88 @@ function buildSections(snapshot: SnapshotRich, opts: RenderOptionsRuntime) {
     sections.push({ id, title, html })
   }
 
-  add('marks-view', 'Mark’s View', renderMarksViewSection(snapshot, opts))
-  add('synthesis', 'Executive Synthesis', renderMarkdownBlock(snapshot.narratives.synthesis?.sanitized || snapshot.narratives.synthesis?.raw))
-  add('ideation', 'Creative Sparks', renderIdeationSection(snapshot))
+  add('framing', 'Framing Snapshot', renderFramingSection(snapshot))
   add('evaluation', 'Evaluation Highlights', renderEvaluationSection(snapshot, opts))
-  add('strategist', 'Strategist Scenarios', renderStrategistSection(snapshot))
-  add('research', 'Research Signals', renderResearchSection(snapshot))
-  add('brief', 'Brief Snapshot', renderBriefSection(snapshot))
   return sections
 }
 
 function renderBriefSection(snapshot: SnapshotRich) {
   const html = snapshot.brief?.snapshot ? markdownToHtml(snapshot.brief.snapshot) : '<p>No brief snapshot saved.</p>'
   return html
+}
+
+function renderSparkSection(snapshot: SnapshotRich) {
+  const payload: any = (snapshot as any).spark
+  if (!payload) return '<p>No Spark concept captured for this campaign.</p>'
+  const analysis = payload.analysis || {}
+  const hookOptions = Array.isArray(payload?.hookPlayground?.options)
+    ? payload.hookPlayground.options.filter((opt: any) => opt && typeof opt.headline === 'string').slice(0, 5)
+    : []
+  const cadenceIdeas = Array.isArray(payload?.hookPlayground?.cadence)
+    ? payload.hookPlayground.cadence.filter((line: any) => typeof line === 'string' && line.trim()).slice(0, 5)
+    : []
+  const tensions = Array.isArray(analysis.tensions)
+    ? analysis.tensions.filter((line: any) => typeof line === 'string' && line.trim()).slice(0, 4)
+    : []
+  const compliance = Array.isArray(analysis.compliance)
+    ? analysis.compliance.filter((line: any) => typeof line === 'string' && line.trim()).slice(0, 4)
+    : []
+
+  const card = (title: string, body: string) => `<div class="spark-card"><h4>${escapeHtml(title)}</h4>${body}</div>`
+  const textCard = (title: string, value?: string) =>
+    value ? card(title, `<p>${escapeHtml(value)}</p>`) : ''
+  const listCard = (title: string, values: string[]) =>
+    values.length ? card(title, `<ul>${values.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>`) : ''
+
+  const valueLine =
+    typeof analysis?.value?.description === 'string'
+      ? analysis.value.description
+      : (typeof analysis?.value?.summary === 'string' && analysis.value.summary) || ''
+  const tradeLine = [analysis?.trade?.reward, analysis?.trade?.guardrail]
+    .map((part) => (typeof part === 'string' ? part.trim() : ''))
+    .filter(Boolean)
+    .join(' • ')
+
+  const cards = [
+    textCard('Summary', analysis.summary),
+    textCard('Audience', analysis.audience),
+    textCard('Value lens', valueLine),
+    textCard('Cadence', analysis.cadence),
+    textCard('Trade cue', tradeLine),
+    listCard('Shopper tensions', tensions as string[]),
+    listCard('Compliance guardrails', compliance as string[]),
+  ].filter(Boolean)
+
+  const cardsHtml = cards.length ? `<div class="spark-grid">${cards.join('')}</div>` : ''
+
+  const hookBadges = hookOptions
+    .map(
+      (opt: any) =>
+        `<span class="spark-badge spark-badge--hooks"><strong>${escapeHtml(opt.headline)}</strong>${
+          opt.support ? `<small>${escapeHtml(opt.support)}</small>` : ''
+        }</span>`
+    )
+    .join('')
+  const cadenceBadges = cadenceIdeas
+    .map((line: string) => `<span class="spark-badge spark-badge--cadence">${escapeHtml(line)}</span>`)
+    .join('')
+  const badgeRow =
+    hookBadges || cadenceBadges ? `<div class="spark-badge-row">${hookBadges}${cadenceBadges}</div>` : ''
+
+  return `
+    <div class="spark-panel">
+      <div class="spark-panel-head">
+        <div>
+          <p class="spark-panel-eyebrow">Spark primer</p>
+          <p class="spark-panel-title">Lock the promise before you riff.</p>
+          <p class="spark-panel-subtitle">Trudy distilled these cues from your Spark sketch. Keep them intact as you iterate.</p>
+        </div>
+        <span class="spark-chip"><span class="spark-chip-dot"></span>Spark</span>
+      </div>
+      ${cardsHtml}
+      ${badgeRow}
+    </div>
+  `
 }
 
 function renderOnePager(snapshot: SnapshotRich, opts: RenderOptionsRuntime) {
@@ -205,6 +274,222 @@ function renderOnePager(snapshot: SnapshotRich, opts: RenderOptionsRuntime) {
   return renderReviewAsBriefed(ctx)
 }
 
+function renderFramingSection(snapshot: SnapshotRich) {
+  const framingText = snapshot.narratives.framing?.sanitized || snapshot.narratives.framing?.raw || ''
+  const meta =
+    (snapshot as any).framingMeta ||
+    (snapshot.narratives.framing as any)?.metaFull ||
+    snapshot.narratives.framing?.meta ||
+    null
+  const spec = snapshot.context?.briefSpec || {}
+  if (meta && framingMetaHasContent(meta)) {
+    return renderFramingFromMeta(meta, spec)
+  }
+  if (framingText.trim()) {
+    return renderMarkdownBlock(framingText)
+  }
+  return '<p>No framing narrative saved.</p>'
+}
+
+function framingMetaHasContent(meta: any) {
+  const hasString = (value: any) => typeof value === 'string' && cleanText(value).length > 0
+  const hasList = (list: any) => Array.isArray(list) && list.some((item) => cleanText(item || '').length > 0)
+
+  if (hasString(meta?.behavioural_objective)) return true
+  if (hasList(meta?.tensions)) return true
+  if (Array.isArray(meta?.audience?.mindsets) && meta.audience.mindsets.length) return true
+  if (hasList(meta?.hooks)) return true
+  if (hasList(meta?.proposition_candidates)) return true
+  if (hasList(meta?.brand_truths)) return true
+  if (hasList(meta?.reasons_to_believe)) return true
+  if (hasList(meta?.category_codes?.lean)) return true
+  if (hasList(meta?.category_codes?.break)) return true
+  return false
+}
+
+function renderFramingFromMeta(meta: any, spec: Record<string, any>) {
+  const summaryLines: string[] = []
+  if (meta.behavioural_objective) {
+    summaryLines.push(`<p><strong>Behavioural objective</strong> — ${escapeHtml(meta.behavioural_objective)}</p>`)
+  }
+  const tensions = takeStrings(meta.tensions, 3)
+  if (tensions.length) {
+    summaryLines.push(`<p><strong>Shopper tensions</strong> — ${escapeHtml(tensions.join(' · '))}</p>`)
+  }
+  const mindsets = Array.isArray(meta.audience?.mindsets)
+    ? meta.audience.mindsets
+        .slice(0, 2)
+        .map((mind: any) => cleanText([mind?.name, mind?.job].filter(Boolean).join(' — ')))
+        .filter(Boolean)
+    : []
+  if (mindsets.length) {
+    summaryLines.push(`<p><strong>Audience lens</strong> — ${escapeHtml(mindsets.join(' | '))}</p>`)
+  }
+  const summaryHtml = summaryLines.length ? `<div class="framing-summary">${summaryLines.join('')}</div>` : ''
+
+  const sections: string[] = []
+  const hooks = takeStrings(meta.hooks, 4)
+  if (hooks.length) sections.push(renderListSection('Hooks to test', hooks))
+
+  const props = takeStrings(meta.proposition_candidates, 4)
+  if (props.length) sections.push(renderListSection('Proposition candidates', props))
+
+  const leanOns = takeStrings(meta.brand_truths, 4)
+  if (leanOns.length) sections.push(renderListSection('Brand truths to lean on', leanOns))
+
+  const rb = takeStrings(meta.reasons_to_believe, 4)
+  if (rb.length) sections.push(renderListSection('Reasons to believe', rb))
+
+  const hypotheses = buildFramingHypotheses(meta, spec)
+  if (hypotheses.length) sections.push(renderListSection('Hypotheses to test', hypotheses))
+
+  const prizeItems = Array.isArray(meta.prize_map?.items)
+    ? meta.prize_map.items
+        .map((item: any) => cleanText([item?.label, item?.rationale].filter(Boolean).join(' — ')))
+        .filter(Boolean)
+        .slice(0, 4)
+    : []
+  if (prizeItems.length) sections.push(renderListSection('Reward shape', prizeItems))
+
+  const leanCodes = takeStrings(meta.category_codes?.lean, 3)
+  const breakCodes = takeStrings(meta.category_codes?.break, 3)
+  if (leanCodes.length || breakCodes.length) {
+    const inner: string[] = []
+    if (leanCodes.length) inner.push(`<p><strong>Codes to lean</strong> — ${escapeHtml(leanCodes.join(' · '))}</p>`)
+    if (breakCodes.length) inner.push(`<p><strong>Codes to break</strong> — ${escapeHtml(breakCodes.join(' · '))}</p>`)
+    sections.push(`<div class="lens-section"><h3>Category codes</h3>${inner.join('')}</div>`)
+  }
+
+  const gridHtml = sections.length ? `<div class="framing-grid">${sections.join('')}</div>` : ''
+  return `<div class="framing-structured">${summaryHtml}${gridHtml}</div>`
+}
+
+function buildFramingHypotheses(meta: any, spec: Record<string, any>): string[] {
+  const base = takeStrings(meta.improvement_hypotheses, 4).filter(
+    (line) => !/symbolic prize|cultural resonance|premiumisation|owners?[’']?\s*kit|passport/i.test(line || '')
+  )
+  const derived: string[] = []
+  const mechanicText = [spec.mechanicOneLiner, spec.entryMechanic, spec.promotionHeadline, spec.mechanic]
+    .map((value) => cleanText(value || ''))
+    .filter(Boolean)
+    .join(' ')
+  const thresholdMatch = mechanicText.match(/(\d+)\s*(?:pints|stamp|stamps)/i)
+  if (thresholdMatch) {
+    const threshold = Number(thresholdMatch[1])
+    if (threshold >= 8) {
+      const reduced = Math.max(3, Math.round(threshold / 2))
+      derived.push(`If we drop the passport from ${threshold} pints to ${reduced}, completion should at least double without cheapening the owners’ kit.`)
+    }
+  }
+  if (includesKeyword(mechanicText, ['passport', 'stamp']) && !includesKeyword(mechanicText, ['digital', 'qr'])) {
+    derived.push('Testing a fully digital passport (QR at the bar) versus paper should prove far higher staff adoption during St Pat’s peaks.')
+  }
+  if (meta?.prize_map?.has_symbolic_prize) {
+    const symbolicLabel = (meta.prize_map.items || []).find((item: any) => item?.type === 'PRIZE_SYMBOLIC')?.label || 'the symbolic reward'
+    derived.push(`Leading with ${symbolicLabel} (and treating the T-shirt as owners’ colours) should lift perceived fairness versus merch-first copy.`)
+  }
+  if (spec.assuredValue || spec.rewardPosture === 'ASSURED') {
+    derived.push('Guaranteeing the owners’ kit for every completed passport should keep complaint rates under 1% despite the effort required.')
+  }
+  return dedupeStrings([...derived, ...base])
+    .filter((line) => !/\bpassport\b|owners?\s*['’]?s?\s*kit/i.test(line))
+    .slice(0, 4)
+}
+
+function renderCampaignSpine(snapshot: SnapshotRich, opts: RenderOptionsRuntime) {
+  const evaluationText = snapshot.narratives.evaluation?.sanitized || snapshot.narratives.evaluation?.raw || ''
+  const evaluationSections = parseEvaluationSections(evaluationText || '')
+  if (!evaluationText.trim()) {
+    return '<p>No evaluation narrative saved yet.</p>'
+  }
+  const strategistParsed = parseStrategistNarrative(snapshot.narratives.strategist?.sanitized || snapshot.narratives.strategist?.raw || '')
+  const summary = evaluationSections['Verdict'] || evaluationSections['Why It Works'] || ''
+  const whyWorks = evaluationSections['Why It Works'] ? `<p><strong>Why it resonates</strong> — ${escapeHtml(evaluationSections['Why It Works'])}</p>` : ''
+  const breaks = evaluationSections['Where It Breaks'] ? `<p><strong>Where it breaks</strong> — ${escapeHtml(evaluationSections['Where It Breaks'])}</p>` : ''
+  const hookUpgrade = evaluationSections['Hook Upgrade'] ? `<p><strong>Hook upgrade</strong> — ${escapeHtml(evaluationSections['Hook Upgrade'])}</p>` : ''
+
+  const fixIt = evaluationSections['Fix It'] ? `<p><strong>Fix it now</strong> — ${escapeHtml(evaluationSections['Fix It'])}</p>` : ''
+  const tighten = evaluationSections['Tighten'] ? `<p><strong>Tighten</strong> — ${escapeHtml(evaluationSections['Tighten'])}</p>` : ''
+  const measurement = evaluationSections['Measurement'] ? `<p><strong>Measure</strong> — ${escapeHtml(evaluationSections['Measurement'])}</p>` : ''
+  const packLine = evaluationSections['Pack Line'] ? `<p><strong>Pack line</strong> — ${escapeHtml(evaluationSections['Pack Line'])}</p>` : ''
+  const staffLine = evaluationSections['Staff Line'] ? `<p><strong>Staff line</strong> — ${escapeHtml(evaluationSections['Staff Line'])}</p>` : ''
+
+  const hooks = parseHookLines(evaluationSections['Hook Shortlist'] || '')
+    .map(formatHookCandidate)
+    .filter((hook) => hook.length <= 80)
+    .slice(0, 4)
+  const hookHtml = hooks.length
+    ? `<div class="lens-section"><h3>Hook contenders</h3><ul>${hooks.map((hook) => `<li>${escapeHtml(hook)}</li>`).join('')}</ul></div>`
+    : ''
+
+  const stretchScenarioObj = strategistParsed.scenarios[0]
+  const stretchScenario = stretchScenarioObj
+    ? `<p><strong>${escapeHtml(stretchScenarioObj.label)}</strong> — ${markdownToHtml(stretchScenarioObj.body).replace(/^<p>|<\/p>$/g, '')}</p>`
+    : ''
+
+  return `
+    <div class="spine-intro">
+      ${summary ? `<div class="callout callout-decision"><h4>Read of the campaign</h4><p>${escapeHtml(summary)}</p></div>` : ''}
+    </div>
+    <div class="spine-grid">
+      <article class="spine-card">
+        <h4>As briefed</h4>
+        ${whyWorks || breaks ? `${whyWorks}${breaks}` : '<p>No evaluation summary yet.</p>'}
+        ${hookUpgrade}
+      </article>
+      <article class="spine-card">
+        <h4>Make it land</h4>
+        ${fixIt}${tighten}${measurement}
+        ${packLine}${staffLine}
+      </article>
+      <article class="spine-card">
+        <h4>Bolder stretch</h4>
+        ${stretchScenario || '<p>No stretch scenario captured.</p>'}
+      </article>
+    </div>
+    ${hookHtml}
+  `
+}
+
+function renderEvidenceSection(snapshot: SnapshotRich, opts: RenderOptionsRuntime) {
+  const parts: string[] = []
+  const offerIQ = snapshot.offerIQ
+  if (offerIQ) {
+    const offerLines = [
+      offerIQ.verdict ? `<p><strong>OfferIQ verdict</strong> — ${escapeHtml(offerIQ.verdict)}</p>` : '',
+      offerIQ.lenses?.adequacy?.why ? `<p>${escapeHtml(offerIQ.lenses.adequacy.why)}</p>` : '',
+    ].filter(Boolean).join('')
+    parts.push(`<div class="callout callout-offeriq">${offerLines || '<p>No OfferIQ detail.</p>'}</div>`)
+  }
+  const scoreboardHtml = renderScoreboard(snapshot.narratives.evaluation?.meta?.scoreboard || snapshot.evaluationMeta?.scoreboard || null)
+  if (scoreboardHtml) parts.push(scoreboardHtml)
+  const researchHtml = renderResearchSection(snapshot)
+  if (researchHtml) parts.push(researchHtml)
+  const sparkHtml = renderSparkSection(snapshot)
+  if (sparkHtml) parts.push(sparkHtml)
+  return parts.length ? `<div class="evidence-grid">${parts.join('')}</div>` : '<p>No supporting evidence captured.</p>'
+}
+
+function renderWildcardsSection(snapshot: SnapshotRich) {
+  const strategistParsed = parseStrategistNarrative(snapshot.narratives.strategist?.sanitized || snapshot.narratives.strategist?.raw || '')
+  const scenarios = strategistParsed.scenarios.slice(1).concat(strategistParsed.scenarios.slice(0, 1)).slice(0, 2)
+  const cards = scenarios.map((scenario) => `<article class="strategist-card">
+      <h4>${escapeHtml(scenario.label)}</h4>
+      ${markdownToHtml(scenario.body)}
+    </article>`)
+
+  const sparkHighlights = collectSparkFacts((snapshot as any).spark).map((fact) => fact.claim).slice(0, 4)
+  const sparkHtml = sparkHighlights.length
+    ? `<div class="callout callout-spark">
+        <h4>Spark cues</h4>
+        <ul>${sparkHighlights.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>
+      </div>`
+    : ''
+  if (!cards.length && !sparkHtml) {
+    return '<p>No wild ideas captured.</p>'
+  }
+  return `<div class="wild-grid">${cards.join('')}${sparkHtml}</div>`
+}
 function renderMarksViewSection(snapshot: SnapshotRich, opts: RenderOptionsRuntime) {
   const ctx = buildLensContext(snapshot, opts)
   const chapters = [
@@ -247,6 +532,245 @@ function renderMarksViewSection(snapshot: SnapshotRich, opts: RenderOptionsRunti
   </div>`
 }
 
+function parseHookLines(raw: string): string[] {
+  if (!raw) return []
+  return raw
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^[\s•*+-]+/, '').trim())
+    .map((line) => line.replace(/^["“]+/, '').replace(/["”]+$/, ''))
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .map((line) => line.replace(/\bguinness\b/gi, 'Guinness'))
+    .map((line) =>
+      line
+        .split(' ')
+        .map((word) => (word ? word[0].toUpperCase() + word.slice(1) : word))
+        .join(' ')
+    )
+    .filter((line) => line && line.length >= 3)
+}
+
+function formatHookCandidate(line: string): string {
+  if (!line) return ''
+  let text = line.trim()
+  text = text.replace(/["“”]+/g, '"')
+  text = text.replace(/"[-–—\s]*"$/g, '')
+  text = text.replace(/!?"\s*[-–—]\s*"?$/g, '')
+  text = text.replace(/^"|"$/g, '')
+  text = text.replace(/\s+/g, ' ')
+  text = text.replace(/\bGuinness\b/gi, 'Guinness')
+  if (text) {
+    text = text[0].toUpperCase() + text.slice(1)
+  }
+  return text
+}
+
+function dedupeByLower(items: string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const item of items) {
+    const key = item.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(item)
+  }
+  return out
+}
+
+function buildFixPlanCandidates(sections: Record<string, string>, scoreboard: any): string[] {
+  const base = [sections['Fix It'], sections['Tighten'], sections['Stretch']]
+    .map((line) => cleanText(line || ''))
+    .filter(Boolean)
+  const boardFixes = [
+    scoreboard?.friction?.fix,
+    scoreboard?.rewardShape?.fix,
+    scoreboard?.retailerReadiness?.fix,
+    scoreboard?.objectiveFit?.fix,
+  ]
+    .map((line) => cleanText(line || ''))
+    .filter(Boolean)
+  const combined = [...base, ...boardFixes]
+  const filtered = combined.filter((line) => !/hero overlay|double pass/i.test(line || ''))
+  return dedupePlanLines(filtered).slice(0, 4)
+}
+
+function dedupePlanLines(lines: string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const line of lines) {
+    const text = line.trim()
+    if (!text) continue
+    const key = planConceptKey(text)
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(capitalizeSentence(text))
+  }
+  return out
+}
+
+function planConceptKey(text: string): string {
+  const lower = text.toLowerCase()
+  if (lower.includes('pint') && (lower.includes('6') || lower.includes('six'))) {
+    return 'reduce-to-6-pints'
+  }
+  if (lower.includes('reduce') && lower.includes('pint')) {
+    return 'reduce-pints'
+  }
+  if (lower.includes('digital') || lower.includes('register') || lower.includes('app')) {
+    return 'digital-passport'
+  }
+  if (lower.includes('dashboard')) {
+    return 'online-dashboard'
+  }
+  if (lower.includes('mail') || lower.includes('first touch') || lower.includes('multi-upload')) {
+    return 'simplify-entry'
+  }
+  return lower
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]/g, '')
+    .replace(/\b(twelve|12)\b/g, '12')
+    .replace(/\b(six|6)\b/g, '6')
+    .trim()
+}
+
+function capitalizeSentence(text: string): string {
+  if (!text) return ''
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+function describeValueScale(scoreboard: any, meta: any, offerIQ: any): string | null {
+  const rewardStatus = String(scoreboard?.rewardShape?.status || '').toUpperCase()
+  const mode = offerIQ?.mode || meta?.offerIQ?.mode || null
+  const position = offerIQ?.diagnostics?.cashbackVsMarket || meta?.ui?.benchmarks?.positionVsMarket
+  if (mode === 'ASSURED') {
+    if (rewardStatus === 'GREEN') {
+      if (position === 'ABOVE_P75' || position === 'ABOVE_TYPOLOGICAL') {
+        return 'Zone 2 — richer than typical cashback; keep the story tight and evidence the payout.'
+      }
+      if (position === 'BELOW_P25' || position === 'BELOW_TYPICAL') {
+        return 'Zone 1 — value feels light versus the market; either lift it or make fairness/winners hyper-visible.'
+      }
+      return 'Zone 1–2 — guaranteed cashback sits in the normal band; the job now is clarity and low hassle.'
+    }
+    if (rewardStatus === 'AMBER') {
+      return 'Zone 2 — acceptable band, but fix the friction so the guarantee feels real.'
+    }
+    if (rewardStatus === 'RED') {
+      return 'Zone 3 — effort outweighs perceived reward; either raise the cashback or slash the admin.'
+    }
+    return null
+  }
+  // prize-led default
+  const frictionStatus = String(scoreboard?.friction?.status || '').toUpperCase()
+  if (rewardStatus === 'RED' || frictionStatus === 'RED') {
+    return 'Zone 3 — effort outweighs perceived reward. Cut the threshold or dramatise a richer guaranteed value.'
+  }
+  if (rewardStatus === 'GREEN') {
+    return 'Zone 2 — hero + breadth feels believable; keep cadence visible.'
+  }
+  return null
+}
+
+type ValueUpgradeSummary = {
+  status?: string
+  lead?: string
+  summary?: string
+  fix?: string
+  tail?: string
+}
+
+function formatCount(value: number | null | undefined): string | null {
+  if (value == null || Number.isNaN(value)) return null
+  const num = Math.round(Number(value))
+  if (!Number.isFinite(num) || num <= 0) return null
+  return num.toLocaleString('en-US')
+}
+
+function describeBaseValueOption(base: any): string | null {
+  if (!base || base.type === 'none') return null
+  const amount = typeof base.amount === 'number' && Number.isFinite(base.amount) ? base.amount : null
+  if (base.type === 'cashback') {
+    return amount != null ? `$${amount.toLocaleString('en-US')} cashback` : 'Cashback'
+  }
+  if (base.type === 'voucher') {
+    return amount != null ? `$${amount.toLocaleString('en-US')} voucher` : 'Voucher on next shop'
+  }
+  if (base.type === 'gwp') {
+    return amount != null ? `GWP worth ~$${amount.toLocaleString('en-US')}` : 'Gift with purchase'
+  }
+  return null
+}
+
+function mapScaleZoneToStatus(zone?: string | null): string | undefined {
+  const z = String(zone || '').toUpperCase()
+  if (z === 'ZONE_3_BREAKS_SYSTEM') return 'RED'
+  if (z === 'ZONE_1_NORMAL' || z === 'ZONE_2_BRAVE') return 'GREEN'
+  return undefined
+}
+
+function describeScaleZoneBand(zone?: string | null): string {
+  const z = String(zone || '').toUpperCase()
+  if (z === 'ZONE_1_NORMAL') return 'Zone 1 — back inside normal category value once upgrades land.'
+  if (z === 'ZONE_2_BRAVE') return 'Zone 2 — a purposeful richer band; sell the theatre and cadence.'
+  if (z === 'ZONE_3_BREAKS_SYSTEM') return 'Zone 3 — still reckless; cut friction or value before pitching.'
+  return ''
+}
+
+function deriveImprovedValuePromise(meta: any): ValueUpgradeSummary | null {
+  const improvement = meta?.multiAgentImprovement
+  if (!improvement || !Array.isArray(improvement.agents)) return null
+  const offerAgent = improvement.agents.find(
+    (agent: any) => agent?.agent === 'OfferIQ' && Array.isArray(agent.options) && agent.options.length
+  )
+  if (!offerAgent) return null
+  const preferredLabel =
+    offerAgent.recommended_option_label ||
+    improvement.bruce?.recommended_option_label ||
+    (improvement.bruce?.upgrade_options?.[0]?.label ?? null)
+  const candidate =
+    offerAgent.options.find((opt: any) => opt?.label === preferredLabel) || offerAgent.options[0] || null
+  if (!candidate) return null
+
+  const status = mapScaleZoneToStatus(candidate.scale_zone)
+  const lead = candidate.label ? `Upgrade — ${String(candidate.label)} option` : undefined
+
+  const summaryParts: string[] = []
+  const baseValueText = describeBaseValueOption(candidate.base_value)
+  if (candidate.description) summaryParts.push(String(candidate.description))
+  else if (candidate.rationale) summaryParts.push(String(candidate.rationale))
+  if (baseValueText) summaryParts.push(baseValueText)
+  const majorCount =
+    typeof candidate.major_prize_count === 'number' && Number.isFinite(candidate.major_prize_count)
+      ? candidate.major_prize_count
+      : null
+  const majors = formatCount(majorCount)
+  if (majors) summaryParts.push(`${majors} major prize${majorCount === 1 ? '' : 's'}`)
+  const runnerCount =
+    typeof candidate.runner_up_prize_count === 'number' && Number.isFinite(candidate.runner_up_prize_count)
+      ? candidate.runner_up_prize_count
+      : null
+  const runnerUps = formatCount(runnerCount)
+  if (runnerUps) summaryParts.push(`${runnerUps} runner-up prize${runnerCount === 1 ? '' : 's'}`)
+  if (candidate.cadence_comment) summaryParts.push(String(candidate.cadence_comment))
+  const summary = summaryParts.join(' • ')
+
+  const tailParts: string[] = []
+  const zoneText = describeScaleZoneBand(candidate.scale_zone)
+  if (zoneText) tailParts.push(zoneText)
+  if (Array.isArray(candidate.trade_offs) && candidate.trade_offs.length) {
+    tailParts.push(String(candidate.trade_offs[0]))
+  }
+
+  const fix = Array.isArray(offerAgent.must_fix) && offerAgent.must_fix.length ? String(offerAgent.must_fix[0]) : undefined
+
+  return {
+    status,
+    lead,
+    summary: summary || undefined,
+    fix,
+    tail: tailParts.join(' ').trim() || undefined,
+  }
+}
+
 type ScoreEntry = {
   label: string
   status: string
@@ -285,6 +809,10 @@ type LensContext = {
   altHooks: string[]
   altIdeasDetailed: { hook: string; agent?: string; tier?: string; what?: string }[]
   guardrails: string[]
+  rewardPosture: string
+  staffBurden: string
+  assuredSummary: string
+  evaluationNarrative: string
 }
 
 function buildLensContext(snapshot: SnapshotRich, opts: RenderOptionsRuntime): LensContext {
@@ -293,6 +821,14 @@ function buildLensContext(snapshot: SnapshotRich, opts: RenderOptionsRuntime): L
   const campaign = snapshot.campaign.title || 'Campaign'
   const category = snapshot.context.category || snapshot.context.briefSpec?.category || ''
   const dossier = snapshot.research?.dossier || {}
+  const briefTensions = listFromBrief(spec.buyerTensions || spec.tensions)
+  const briefTruths = listFromBrief(spec.brandTruths)
+  const briefRetailFocus = cleanText(spec.retailerFocusNotes || spec.retailerNotes || '')
+  const retailerNames = listFromBrief(spec.retailers)
+  const retailerTags = listFromBrief(spec.retailerTags)
+  const activationChannels = listFromBrief(spec.activationChannels)
+  const displayedCreativeHooks = collectIdeationDisplayHooks(snapshot)
+  const creativeHooksSet = new Set(displayedCreativeHooks.map((hook) => hook.toLowerCase()))
   const firstNonEmpty = (...candidates: any[]) => {
     for (const candidate of candidates) {
       const text = cleanText(candidate)
@@ -303,15 +839,20 @@ function buildLensContext(snapshot: SnapshotRich, opts: RenderOptionsRuntime): L
   const firstText = (arr?: Array<{ text?: string }>) =>
     Array.isArray(arr) && arr.length ? String(arr[0]?.text || '').trim() : ''
   const shopperTensionRaw =
+    briefTensions[0] ||
     firstText(dossier.shopperTensions) ||
     firstText(snapshot.research?.audience?.facts) ||
     snapshot.narratives.evaluation?.hookWhy ||
     ''
   const brandTruthRaw =
+    briefTruths[0] ||
+    distinctiveAssetFact(spec) ||
     firstText(dossier.brandTruths) ||
     firstText(snapshot.research?.brand?.facts) ||
     ''
   const retailerRealityRaw =
+    briefRetailFocus ||
+    formatRetailSummary(retailerNames, retailerTags, activationChannels) ||
     firstText(dossier.retailerReality) ||
     firstText(snapshot.research?.retailers?.facts) ||
     ''
@@ -319,6 +860,8 @@ function buildLensContext(snapshot: SnapshotRich, opts: RenderOptionsRuntime): L
     snapshot.narratives.evaluation?.meta?.ui?.measurement ||
     snapshot.narratives.evaluation?.meta?.measurement ||
     snapshot.narratives.evaluation?.meta?.scoreboard?.measurement ||
+    spec.primaryKpi ||
+    spec.primaryObjective ||
     ''
   const briefHookRaw = firstNonEmpty(
     spec?.mechanicOneLiner,
@@ -381,7 +924,11 @@ function buildLensContext(snapshot: SnapshotRich, opts: RenderOptionsRuntime): L
       ? snapshot.framingMeta?.rules?.founder?.notes.map((note: string) => cleanText(note)).slice(0, 4)
       : []
 
-  const researchSignals = collectResearchSignals(snapshot).slice(0, 4)
+  const specSignals = buildBriefSignals(spec)
+  const researchSignals = dedupeStrings([
+    ...specSignals,
+    ...collectResearchSignals(snapshot),
+  ]).slice(0, 4)
 
   const harness = snapshot.ideation?.harness || null
   const harnessPoint = cleanText(harness?.point || '')
@@ -389,9 +936,14 @@ function buildLensContext(snapshot: SnapshotRich, opts: RenderOptionsRuntime): L
   const harnessRetailerLine = cleanText(harness?.retailerLine || '')
   const harnessOdds = cleanText(harness?.oddsCadence || '')
   const harnessLegal = cleanText(harness?.legalVariant || '')
+  const baselinePhrases = collectBaselinePhrases(spec)
   const altHooksRaw = Array.isArray(snapshot.hooksTop) ? snapshot.hooksTop.map(cleanText).slice(0, 6) : []
-  const altHooks = filterBrandAligned(altHooksRaw, brand).slice(0, 4)
-  const altIdeasDetailed = Array.isArray(snapshot.ideation?.unboxed)
+  let altHooks = filterBrandAligned(altHooksRaw, brand)
+    .filter((hook) => !referencesBaseline(hook, baselinePhrases))
+    .map((hook) => hook.trim())
+    .filter((hook) => hook && !creativeHooksSet.has(hook.toLowerCase()))
+    .slice(0, 4)
+  let altIdeasDetailed = Array.isArray(snapshot.ideation?.unboxed)
     ? snapshot.ideation?.unboxed.flatMap((agent) => {
         const agentName = agent?.agent || ''
         return (agent?.ideas || []).slice(0, 2).map((idea: any) => ({
@@ -400,8 +952,25 @@ function buildLensContext(snapshot: SnapshotRich, opts: RenderOptionsRuntime): L
           tier: cleanText(String(idea?.tier || '')),
           what: cleanText(idea?.what || ''),
         }))
-      }).filter((idea) => idea.hook).slice(0, 4)
+      })
+        .filter(
+          (idea) =>
+            idea.hook &&
+            !referencesBaseline(`${idea.hook} ${idea.what || ''}`, baselinePhrases) &&
+            !creativeHooksSet.has(idea.hook.toLowerCase())
+        )
+        .slice(0, 4)
     : []
+  if (!altIdeasDetailed.length) {
+    altIdeasDetailed = buildFallbackRebootIdeas({
+      brand,
+      shopperTension: shopperTension,
+      assuredSummary: formatAssuredSummary(spec),
+    })
+  }
+  if (!altHooks.length && altIdeasDetailed.length) {
+    altHooks = altIdeasDetailed.map((idea) => idea.hook).slice(0, 4)
+  }
 
   const offerIqVerdict = snapshot.offerIQ?.verdict ? String(snapshot.offerIQ.verdict) : null
   const evalVerdict =
@@ -411,6 +980,10 @@ function buildLensContext(snapshot: SnapshotRich, opts: RenderOptionsRuntime): L
     ''
 
   const guardrails = collectGuardrails(snapshot, opts)
+  const rewardPosture = String(spec.rewardPosture || '').toUpperCase()
+  const staffBurden = String(spec.staffBurden || '').toUpperCase()
+  const assuredSummary = formatAssuredSummary(spec)
+  const evaluationNarrative = snapshot.narratives.evaluation?.sanitized || snapshot.narratives.evaluation?.raw || ''
 
   return {
     brand,
@@ -443,10 +1016,18 @@ function buildLensContext(snapshot: SnapshotRich, opts: RenderOptionsRuntime): L
     altHooks,
     altIdeasDetailed,
     guardrails,
+    rewardPosture,
+    staffBurden,
+    assuredSummary,
+    evaluationNarrative,
   }
 }
 
 function renderReviewAsBriefed(ctx: LensContext) {
+  const narrative = ctx.evaluationNarrative?.trim()
+  if (narrative) {
+    return renderEvaluationNarrative(narrative)
+  }
   const parts: string[] = []
   parts.push(
     `<p>${escapeHtml(
@@ -505,23 +1086,18 @@ function renderSharpenWithImprovements(ctx: LensContext) {
     )}</p>`
   )
 
-  const keepers = [
-    ...ctx.positives.slice(0, 4),
-    ctx.brandTruth ? `Hold onto the brand proof: ${ctx.brandTruth}` : '',
-  ].filter(Boolean)
-  parts.push(renderListSection('Keep and amplify', keepers))
+  const priorities = dedupeStrings([
+    ctx.assuredSummary ? `Keep the guaranteed reward (${ctx.assuredSummary}) front and centre.` : '',
+    ctx.measurement ? `Prove success via ${ctx.measurement}.` : '',
+    ...ctx.runAgainMoves.slice(0, 3),
+    ...ctx.fixes.slice(0, 2),
+  ]).slice(0, 4)
+  parts.push(renderListSection('Immediate priorities', priorities))
 
-  const upgrades = [
-    ...ctx.runAgainMoves.slice(0, 4),
-    ...ctx.fixes.slice(0, 4),
-    ctx.measurement ? `Reset success measure to ${ctx.measurement}` : '',
-  ].filter(Boolean)
-  parts.push(renderListSection('Upgrade now', dedupeStrings(upgrades).slice(0, 5)))
-
-  const experiments = [
-    ...ctx.strategistHighlights.slice(0, 3),
-    ...ctx.altHooks.slice(0, 2).map((hook) => `Optional hook variant: ${hook}`),
-  ].filter(Boolean)
+  const experiments = ctx.altHooks
+    .slice(0, 3)
+    .map((hook) => `Prototype alternate hook: ${hook}`)
+    .map((line) => annotateExperiment(line, ctx))
   parts.push(renderListSection('Experiments and theatre', dedupeStrings(experiments)))
 
   const guardrails = [
@@ -552,6 +1128,7 @@ function renderRebootWithAlternatives(ctx: LensContext) {
   if (ctx.harnessMove) alternativeLines.push(`Lead move: ${ctx.harnessMove}`)
   if (ctx.harnessRetailerLine) alternativeLines.push(`Retail shorthand: ${ctx.harnessRetailerLine}`)
   if (ctx.harnessLegal) alternativeLines.push(`Legal variant: ${ctx.harnessLegal}`)
+  if (ctx.assuredSummary) alternativeLines.push(`Keep the guaranteed value (${ctx.assuredSummary}) and use this route to grow incremental pints.`)
   parts.push(renderListSection('Replacement narrative', alternativeLines))
 
   const routes = ctx.altIdeasDetailed.slice(0, 3).map((idea) => {
@@ -571,18 +1148,19 @@ function renderRebootWithAlternatives(ctx: LensContext) {
   ].filter(Boolean)
   parts.push(renderListSection('Why this wins', dedupeStrings(proof)))
 
-  const nextSteps = [
+  const nextSteps = dedupeStrings([
+    ctx.measurement ? `Prove it moves ${ctx.measurement}` : '',
     ctx.guardrails[0],
     ctx.judgeFlags.find((flag) => flag.toLowerCase().includes('approval')),
     ctx.founderNotes[0],
-  ].filter(Boolean)
+  ]).filter(Boolean)
   parts.push(renderListSection('Next steps to unlock', dedupeStrings(nextSteps)))
 
   return parts.filter(Boolean).join('')
 }
 
 function renderListSection(title: string, items: string[]) {
-  const filtered = items.filter(Boolean)
+  const filtered = items.map(normalizeBulletText).filter(Boolean)
   if (!filtered.length) return ''
   return `<div class="lens-section">
     <h3>${escapeHtml(title)}</h3>
@@ -590,14 +1168,38 @@ function renderListSection(title: string, items: string[]) {
   </div>`
 }
 
+function takeStrings(source: any, limit = 4): string[] {
+  if (!source) return []
+  const arr = Array.isArray(source) ? source : [source]
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const entry of arr) {
+    const value = cleanText(entry || '')
+    if (!value) continue
+    const key = value.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(value)
+    if (out.length >= limit) break
+  }
+  return out
+}
+
 function cleanText(value: string) {
   const raw = String(value || '')
-  const withoutWhitespace = raw.replace(/\s+/g, ' ').trim()
+  let withoutWhitespace = raw.replace(/\s+/g, ' ').trim()
+  withoutWhitespace = withoutWhitespace.replace(/Change-from:[^→]+→\s*Change-to:\s*/gi, '')
   if (!withoutWhitespace) return ''
   if (/^[A-Z0-9_ -]+$/.test(withoutWhitespace) && withoutWhitespace === withoutWhitespace.toUpperCase()) {
     return ''
   }
   return withoutWhitespace
+}
+
+function includesKeyword(text: string, keywords: string[]): boolean {
+  if (!text) return false
+  const lower = text.toLowerCase()
+  return keywords.some((word) => lower.includes(word.toLowerCase()))
 }
 
 function dedupeStrings(items: Array<string | undefined>) {
@@ -612,6 +1214,138 @@ function dedupeStrings(items: Array<string | undefined>) {
     }
   }
   return out
+}
+
+function listFromBrief(value: any): string[] {
+  if (!value) return []
+  if (Array.isArray(value)) return value.map((entry) => cleanText(entry || '')).filter(Boolean)
+  if (typeof value === 'string') {
+    return value
+      .split(/[•\n,;|]+/)
+      .map((item) => cleanText(item))
+      .filter(Boolean)
+  }
+  return []
+}
+
+function collectIdeationDisplayHooks(snapshot: SnapshotRich): string[] {
+  const unboxed = Array.isArray(snapshot.ideation?.unboxed) ? snapshot.ideation?.unboxed : []
+  const hooks = unboxed
+    .flatMap((agent) => {
+      if (!Array.isArray(agent?.ideas) || !agent.ideas.length) return []
+      const hook = cleanText(agent.ideas[0]?.hook || '')
+      return hook ? [hook] : []
+    })
+    .slice(0, 5)
+  return hooks.filter(Boolean)
+}
+
+function distinctiveAssetFact(spec: Record<string, any>): string {
+  const visual = listFromBrief(spec?.distinctiveAssets?.visual)
+  const ritual = listFromBrief(spec?.distinctiveAssets?.ritual)
+  if (visual.length) return `${spec.brand || 'brand'} owns ${visual[0]}`
+  if (ritual.length) return `${spec.brand || 'brand'} ritual: ${ritual[0]}`
+  return ''
+}
+
+function formatRetailSummary(names: string[], tags: string[], channels: string[]): string {
+  const slices = dedupeStrings([...(names || []), ...(tags || []), ...(channels || [])]).slice(0, 4)
+  if (!slices.length) return ''
+  return `Priority venues: ${slices.join(', ')}`
+}
+
+function formatAssuredSummary(spec: Record<string, any>): string {
+  const items = [
+    spec?.gwp?.item,
+    ...(Array.isArray(spec?.assuredItems) ? spec.assuredItems : []),
+  ]
+    .map((item) => cleanText(item))
+    .filter(Boolean)
+  if (!items.length) return ''
+  const trigger = spec?.gwp?.triggerQty ? `${spec.gwp.triggerQty}x purchase` : spec.mechanicOneLiner || ''
+  return `${items.join(' + ')}${trigger ? ` • Trigger: ${trigger}` : ''}`
+}
+
+function buildBriefSignals(spec: Record<string, any>): string[] {
+  const signals: string[] = []
+  listFromBrief(spec.buyerTensions).slice(0, 2).forEach((tension) => signals.push(`Buyer tension: ${tension}`))
+  if (spec.primaryObjective) signals.push(`Primary objective: ${cleanText(spec.primaryObjective)}`)
+  if (spec.primaryKpi) signals.push(`Primary KPI: ${cleanText(spec.primaryKpi)}`)
+  if (spec.calendarTheme) signals.push(`Calendar: ${cleanText(spec.calendarTheme)}`)
+  if (spec.retailerFocusNotes) signals.push(`Retail focus: ${cleanText(spec.retailerFocusNotes)}`)
+  return signals.filter(Boolean)
+}
+
+function collectBaselinePhrases(spec: Record<string, any>): string[] {
+  const phrases = [
+    spec.mechanicOneLiner,
+    spec.entryMechanic,
+    spec.hook,
+    spec.gwp?.item,
+    ...(Array.isArray(spec?.assuredItems) ? spec.assuredItems : []),
+  ]
+    .map((phrase) => cleanText(phrase).toLowerCase())
+    .filter((phrase) => phrase.length >= 6)
+  return Array.from(new Set(phrases))
+}
+
+function referencesBaseline(text: string, phrases: string[]): boolean {
+  if (!text) return false
+  const lower = text.toLowerCase()
+  return phrases.some((phrase) => phrase && lower.includes(phrase))
+}
+
+type AltIdea = { hook: string; what: string; agent: string; tier: string }
+type FallbackIdeaArgs = { brand: string; shopperTension: string; assuredSummary: string }
+function buildFallbackRebootIdeas(args: FallbackIdeaArgs): AltIdea[] {
+  const { brand, shopperTension, assuredSummary } = args
+  const guard = shopperTension ? `Solves: ${shopperTension}` : 'Drives extra pint velocity.'
+  return [
+    {
+      hook: `${brand} Two-Pint Passport`,
+      what: `Switch to a 2-pint stamp (not 12) so light drinkers join in; every 6 stamps unlock an Irish share plate. ${guard}`,
+      agent: 'Fallback',
+      tier: 'REBOOT',
+    },
+    {
+      hook: `${brand} Mate's Rates Hour`,
+      what: `Happy-hour bundle: buy a Guinness, shout a mate at 50% between 4–6pm to own the shoulder period. Keep fulfilment central and leave staff workload at zero.`,
+      agent: 'Fallback',
+      tier: 'REBOOT',
+    },
+    {
+      hook: `${brand} Live Trad Drop`,
+      what: `Each pint vote adds a song to the St Pat's trad setlist; instant wins drop merch or pints mid-set. ${assuredSummary ? `Assured reward stays (${assuredSummary}). ` : ''}${guard}`,
+      agent: 'Fallback',
+      tier: 'REBOOT',
+    },
+  ]
+}
+
+function annotateExperiment(line: string, ctx: LensContext): string {
+  if (!line) return ''
+  let annotated = line
+  if (/overlay/i.test(line)) {
+    const metric = ctx.measurement || 'incremental pint velocity'
+    annotated += ` (Overlay only if it proves ${metric} and can be centrally fulfilled.)`
+  }
+  if (/(hourly|burst|every hour|instant win|spin)/i.test(line) && ctx.staffBurden === 'ZERO') {
+    annotated += ' (Automate the draw so staff remain zero-touch.)'
+  }
+  if (/(cashback|bar tab|discount)/i.test(line) && ctx.rewardPosture === 'ASSURED') {
+    annotated += ' (Layer on top of the guaranteed reward—do not replace it.)'
+  }
+  return annotated
+}
+
+function normalizeBulletText(value: string): string {
+  let text = cleanText(value)
+  if (!text) return ''
+  text = text.replace(/Change-from:[^→]+→\s*Change-to:\s*/gi, '')
+  text = text.replace(/Change-from:[^→]+/gi, '')
+  text = text.replace(/\s{2,}/g, ' ').trim()
+  text = text.replace(/^[-•\s]+/, '')
+  return text
 }
 
 function extractScoreboardEntries(board: any): ScoreEntry[] {
@@ -740,6 +1474,7 @@ function renderResearchSection(snapshot: SnapshotRich) {
   const research = snapshot.research || {}
   const dossier = research.dossier || null
   let cards: string[] = []
+  const sparkFacts = collectSparkFacts((snapshot as any).spark).slice(0, 5)
 
   if (dossier) {
     const toFacts = (entries?: Array<{ text?: string; source?: string }>) =>
@@ -763,6 +1498,10 @@ function renderResearchSection(snapshot: SnapshotRich) {
       renderResearchCard('Signals', insightOrFacts(research.insights?.signals, research.signals?.facts)),
       renderResearchCard('Competitor watch', insightOrFacts(research.insights?.competitors, research.competitors?.facts)),
     ].filter(Boolean)
+  }
+
+  if (sparkFacts.length) {
+    cards = [renderResearchCard('Spark cues', sparkFacts, 6), ...cards]
   }
 
   const grid = cards.length ? `<div class="research-grid">${cards.join('')}</div>` : ''
@@ -821,62 +1560,387 @@ function renderExecutiveSummary(snapshot: SnapshotRich, opts: RenderOptionsRunti
   return `<div class="decision-grid">${decisionCard}${guardHtml}${timelineHtml}</div>${measurementHtml}`
 }
 
+function renderMultiAgentRoomHtml(payload: any) {
+  if (!payload || !payload.bruce) return ''
+  const bruce = payload.bruce || {}
+  const reasons = Array.isArray(bruce.top_reasons) ? bruce.top_reasons.filter((line: any) => line).slice(0, 3) : []
+  const mustFix = Array.isArray(bruce.must_fix_items) ? bruce.must_fix_items.filter((line: any) => line).slice(0, 3) : []
+  const quickWins = Array.isArray(bruce.quick_wins) ? bruce.quick_wins.filter((line: any) => line).slice(0, 3) : []
+  const snapshots = Array.isArray(bruce.agent_snapshots) && bruce.agent_snapshots.length
+    ? bruce.agent_snapshots
+    : Array.isArray(payload.agents)
+      ? payload.agents.map((agent: any) => ({
+          agent: agent?.agent || 'Agent',
+          verdict: agent?.verdict || '',
+          headline: agent?.headline || agent?.notes_for_bruce || '',
+        }))
+      : []
+
+  const listBlock = (title: string, lines: string[]) => {
+    const safeLines = (lines || []).filter(Boolean)
+    if (!safeLines.length) return ''
+    return `<div class="multi-room-list"><div class="multi-room-list-title">${escapeHtml(title)}</div><ul>${safeLines
+      .map((line) => `<li>${escapeHtml(line)}</li>`)
+      .join('')}</ul></div>`
+  }
+
+  const agentsHtml = snapshots.length
+    ? `<div class="multi-room-agents">${snapshots
+        .map(
+          (snap: any) =>
+            `<div class="multi-room-agent">
+              <div class="multi-room-agent-head">
+                <span class="multi-room-agent-name">${escapeHtml(snap.agent || 'Agent')}</span>
+                <span class="multi-room-agent-pill">${escapeHtml(snap.verdict || '—')}</span>
+              </div>
+              <p>${escapeHtml(snap.headline || 'No headline provided.')}</p>
+            </div>`
+        )
+        .join('')}</div>`
+    : ''
+
+  const notesHtml = bruce.notes ? `<p class="multi-room-notes">${escapeHtml(bruce.notes)}</p>` : ''
+
+  return `
+    <div class="multi-room">
+      <div class="multi-room-head">
+        <div>
+          <p class="multi-room-label">Room verdict</p>
+          <p class="multi-room-verdict">${escapeHtml(bruce.verdict || '—')}</p>
+          ${notesHtml}
+        </div>
+      </div>
+      <div class="multi-room-body">
+        ${listBlock('Top reasons', reasons)}
+        ${listBlock('Must-fix', mustFix)}
+        ${listBlock('Quick wins', quickWins)}
+      </div>
+      ${agentsHtml}
+    </div>
+  `
+}
+
+function renderMultiAgentImprovementHtml(payload: any) {
+  if (!payload || !payload.bruce) return ''
+  const bruce = payload.bruce || {}
+  const options = Array.isArray(bruce.upgrade_options) ? bruce.upgrade_options.slice(0, 2) : []
+  const recommended = bruce.recommended_option_label || null
+  const agentBlocks = Array.isArray(payload.agents) ? payload.agents : []
+  if (!options.length && !agentBlocks.length) return ''
+
+  const optionCards = options
+    .map((opt: any) => {
+      const hooks = Array.isArray(opt.hooks) ? opt.hooks.slice(0, 3) : []
+      const whyThis = Array.isArray(opt.why_this) ? opt.why_this.slice(0, 3) : []
+      const offerParts: string[] = []
+      if (opt.offer?.cashback != null) offerParts.push(`Cashback: $${opt.offer.cashback}`)
+      if (opt.offer?.major_prizes != null) offerParts.push(`Majors: ${opt.offer.major_prizes}`)
+      const runnerUps = Array.isArray(opt.runner_up_prizes) ? opt.runner_up_prizes : []
+      const runnerList = runnerUps.length
+        ? `<div class="multi-upgrade-runners"><strong>Runner-ups</strong><ul>${runnerUps
+            .map(
+              (rp: any) =>
+                `<li>${rp.count != null ? `${escapeHtml(String(rp.count))} × ` : ''}${
+                  rp.value != null ? `$${escapeHtml(String(rp.value))}` : ''
+                } ${escapeHtml(rp.description || '').trim()}</li>`
+            )
+            .join('')}</ul></div>`
+        : ''
+      const tradeLine = opt.trade_incentive ? `<div class="multi-upgrade-trade"><strong>Trade:</strong> ${escapeHtml(opt.trade_incentive)}</div>` : ''
+      const heroLine = opt.hero_overlay ? `<div class="multi-upgrade-hero"><strong>Hero overlay</strong><p>${escapeHtml(opt.hero_overlay)}</p></div>` : ''
+      const mechLine = opt.mechanic ? `<div class="multi-upgrade-mechanic"><strong>Mechanic:</strong> ${escapeHtml(opt.mechanic)}</div>` : ''
+      const hookList = hooks.length
+        ? `<ul>${hooks.map((hook: string) => `<li>${escapeHtml(hook)}</li>`).join('')}</ul>`
+        : ''
+      const whyList = whyThis.length
+        ? `<ul>${whyThis.map((line: string) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>`
+        : ''
+      return `<div class="multi-upgrade-card">
+        <div class="multi-upgrade-card-head">
+          <span>${escapeHtml(opt.label || 'Upgrade')}</span>
+          ${recommended && recommended === opt.label ? '<span class="multi-upgrade-pill">Recommended</span>' : ''}
+        </div>
+        ${opt.summary ? `<p class="multi-upgrade-summary">${escapeHtml(opt.summary)}</p>` : ''}
+        ${offerParts.length ? `<div class="multi-upgrade-offer">${offerParts.map((p) => `<span>${escapeHtml(p)}</span>`).join(' • ')}</div>` : ''}
+        ${hookList ? `<div class="multi-upgrade-hooks"><strong>Hooks</strong>${hookList}</div>` : ''}
+        ${tradeLine}
+        ${mechLine}
+        ${heroLine}
+        ${runnerList}
+        ${whyList ? `<div class="multi-upgrade-why"><strong>Why</strong>${whyList}</div>` : ''}
+      </div>`
+    })
+    .join('')
+
+  const agentBlocksHtml = agentBlocks.length
+    ? `<div class="multi-upgrade-agents">${agentBlocks
+        .map((block: any) => {
+          const mustFix = Array.isArray(block.must_fix) ? block.must_fix.filter(Boolean).slice(0, 3) : []
+          return `<div class="multi-upgrade-agent">
+            <div class="multi-upgrade-agent-name">${escapeHtml(block.agent || 'Agent')}</div>
+            ${
+              mustFix.length
+                ? `<ul>${mustFix.map((line: string) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>`
+                : '<p>No must-fix items provided.</p>'
+            }
+          </div>`
+        })
+        .join('')}</div>`
+    : ''
+
+  return `
+    <div class="multi-upgrade">
+      <div class="multi-upgrade-head">
+        <div>
+          <p class="multi-upgrade-label">Upgrade plan</p>
+          <p class="multi-upgrade-title">Room recommendations</p>
+          ${bruce.notes ? `<p class="multi-upgrade-notes">${escapeHtml(bruce.notes)}</p>` : ''}
+        </div>
+      </div>
+      ${optionCards ? `<div class="multi-upgrade-grid">${optionCards}</div>` : ''}
+      ${agentBlocksHtml}
+    </div>
+  `
+}
+
 function renderEvaluationSection(snapshot: SnapshotRich, opts: RenderOptionsRuntime) {
   const meta = snapshot.narratives.evaluation?.meta || snapshot.evaluationMeta || {}
   const ui = meta.ui || {}
+  const scoreboard = meta.scoreboard || {}
   const chips: string[] = []
-  if (ui.verdict) chips.push(`Verdict — ${escapeHtml(String(ui.verdict))}`)
+  if (scoreboard.decision || ui.verdict) chips.push(`Verdict — ${escapeHtml(String(scoreboard.decision || ui.verdict))}`)
   if (snapshot.offerIQ?.verdict) chips.push(`OfferIQ ${escapeHtml(String(snapshot.offerIQ.verdict))}`)
   if (opts.judgeVerdict?.score != null) chips.push(`Judge ${opts.judgeVerdict.score}/100`)
   const chipsHtml = chips.length ? `<div class="summary-tags">${chips.map((chip) => `<span class="summary-tag">${chip}</span>`).join('')}</div>` : ''
 
-  const scoreboardHtml = renderScoreboard(meta?.scoreboard || null)
-  const conditions = meta?.scoreboard?.conditions || meta?.conditions || ''
-  const measurement = ui.measurement || meta.measurement || ''
-  const conditionsHtml = conditions
-    ? `<div class="callout callout-conditions"><h4>Mandatory conditions</h4><p>${escapeHtml(conditions)}</p></div>`
-    : ''
-  const measurementHtml = measurement
-    ? `<div class="callout callout-measurement"><h4>Primary measurement</h4><p>${escapeHtml(measurement)}</p></div>`
+  const evaluationText = snapshot.narratives.evaluation?.sanitized || snapshot.narratives.evaluation?.raw || ''
+  const sections = evaluationText ? parseEvaluationSections(evaluationText) : {}
+  if (sections['Staff Line']) {
+    sections['Staff Line'] = sections['Staff Line'].replace(/Key campaign[-–—:].*/i, '').trim()
+  }
+
+  const verdictCopy = sections['Verdict'] || ''
+  const decisionHtml = verdictCopy
+    ? `<div class="callout callout-decision"><h4>Verdict</h4><p>${escapeHtml(verdictCopy)}</p></div>`
     : ''
 
-  const body = renderStructuredNarrative(snapshot.narratives.evaluation?.sanitized || snapshot.narratives.evaluation?.raw || '')
-  return `${chipsHtml}${scoreboardHtml}${conditionsHtml}${measurementHtml}${body}`
+  const hookListRaw = sections['Hook Shortlist'] ? parseHookLines(sections['Hook Shortlist']) : []
+  const spec = snapshot.context?.briefSpec || {}
+  const kpiFallback = cleanText(spec.primaryKpi || spec.primaryObjective || '')
+  let measurement = sections['Measurement'] || ui.measurement || meta.measurement || ''
+  let hookList = dedupeStrings(
+    hookListRaw
+      .filter((hook) => {
+        if (/^measurement\b/i.test(hook)) {
+          const extracted = hook.replace(/^measurement\b[:\s-]*/i, '').trim()
+          if (extracted) measurement = measurement || extracted
+          return false
+        }
+        return true
+      })
+      .concat(Array.isArray(ui.hookOptions) ? ui.hookOptions : [])
+      .map((hook) => cleanText(hook))
+      .filter(Boolean)
+  )
+    .map(formatHookCandidate)
+    .filter((hook) => hook.length <= 80)
+  hookList = dedupeByLower(hookList)
+  if (hookList.length > 3) hookList = hookList.slice(0, 3)
+
+  const storyNotes: string[] = Array.isArray(meta?.offerIQ?.storyNotes)
+    ? meta.offerIQ.storyNotes.map((note: any) => cleanText(note || '')).filter(Boolean)
+    : []
+
+  const improvedValue = deriveImprovedValuePromise(meta)
+  const valueTailParts = [
+    improvedValue?.tail || describeValueScale(scoreboard, meta, snapshot.offerIQ || meta?.offerIQ || null),
+    storyNotes[0],
+  ].filter(Boolean)
+
+  const hookCard = renderEvaluationFocusCard({
+    title: 'Hook verdict',
+    status: scoreboard?.hookStrength?.status,
+    lead: ui.hook ? `Current hook — “${ui.hook}”` : '',
+    summary: meta?.hook_why_change || sections['Hook Upgrade'] || scoreboard?.hookStrength?.why || '',
+    fix: scoreboard?.hookStrength?.fix || '',
+    listTitle: hookList.length ? 'Hook options' : undefined,
+    list: hookList,
+  })
+
+  const prizePoolValue =
+    spec.prizePoolValue != null && Number.isFinite(Number(spec.prizePoolValue))
+      ? Number(spec.prizePoolValue)
+      : null
+  const prizePoolLead = prizePoolValue ? `Prize pool ≈ $${prizePoolValue.toLocaleString('en-US')}` : ''
+  const valueLeadParts = [
+    snapshot.offerIQ?.verdict ? `OfferIQ — ${snapshot.offerIQ.verdict}` : '',
+    prizePoolLead,
+  ].filter(Boolean)
+
+  const valueCard = renderEvaluationFocusCard({
+    title: 'Value promise',
+    status: improvedValue?.status || scoreboard?.rewardShape?.status,
+    lead: improvedValue?.lead || (valueLeadParts.length ? valueLeadParts.join(' • ') : ''),
+    summary: improvedValue?.summary || scoreboard?.rewardShape?.why || sections['Where It Breaks'] || '',
+    fix: [improvedValue?.fix, scoreboard?.rewardShape?.fix].filter(Boolean).join(' ') || undefined,
+    tail: valueTailParts.length ? valueTailParts.join(' ') : undefined,
+  })
+
+  const heroOverlayCard = snapshot.offerIQ?.heroOverlay
+    ? renderEvaluationFocusCard({
+        title: 'Hero overlay',
+        status: 'INFO',
+        lead: snapshot.offerIQ.heroOverlay.label ? `Hero prize — ${snapshot.offerIQ.heroOverlay.label}` : '',
+        summary:
+          snapshot.offerIQ.heroOverlay.narrative ||
+          'Treat this experience as the story engine: cashback is the proof you get value now; the chef experience is the tale shoppers retell. Make that ladder explicit.',
+        fix: 'Spell out how the hero experience ladders off the cashback and keep the entry flow identical.',
+        listTitle: snapshot.offerIQ.heroOverlay.count ? 'Count' : undefined,
+        list: snapshot.offerIQ.heroOverlay.count ? [`≈${snapshot.offerIQ.heroOverlay.count} hero winners`] : [],
+      })
+    : ''
+
+  const opsSummaryParts = [
+    scoreboard?.friction?.why ? `Entry — ${scoreboard.friction.why}` : '',
+    scoreboard?.retailerReadiness?.why ? `Retail — ${scoreboard.retailerReadiness.why}` : '',
+    scoreboard?.fulfilment?.why ? `Fulfilment — ${scoreboard.fulfilment.why}` : '',
+  ]
+    .map((line) => line.trim().replace(/\.\.$/, '.'))
+    .filter(Boolean)
+  const opsSummary = opsSummaryParts.length ? opsSummaryParts.join('. ') : ''
+  const opsFixes = [
+    scoreboard?.friction?.fix,
+    scoreboard?.retailerReadiness?.fix,
+    scoreboard?.fulfilment?.fix,
+  ]
+    .map((line) => cleanText(line || ''))
+    .filter(Boolean)
+    .join(' ')
+  const opsGuardrails = collectConditionLines(scoreboard || {}).map((line) => normalizeBulletText(line)).filter(Boolean)
+  const opsCard = renderEvaluationFocusCard({
+    title: 'Ops & guardrails',
+    status: deriveWorstStatus([scoreboard?.friction?.status, scoreboard?.retailerReadiness?.status, scoreboard?.fulfilment?.status]),
+    summary: opsSummary,
+    fix: opsFixes || (scoreboard?.conditions || meta?.conditions || ''),
+    listTitle: opsGuardrails.length ? 'Guardrails' : undefined,
+    list: opsGuardrails,
+    tail: scoreboard?.conditions && !opsFixes ? scoreboard.conditions : '',
+  })
+
+  const focusGridCards = [hookCard, valueCard, heroOverlayCard, opsCard].filter(Boolean)
+  const focusGrid = focusGridCards.length
+    ? `<div class="evaluation-focus-grid">${focusGridCards.join('')}</div>`
+    : ''
+
+  const reasonsHtml = renderEvaluationReasonGrid({
+    works: sections['Why It Works'],
+    breaks: sections['Where It Breaks'],
+  })
+
+  const fixPlanCandidates = buildFixPlanCandidates(sections, scoreboard)
+  const fixPlanHtml = fixPlanCandidates.length ? renderListSection('Fix plan', fixPlanCandidates) : ''
+
+  const measurementLines: string[] = []
+  if (kpiFallback) measurementLines.push(`Primary KPI — ${kpiFallback}`)
+  if (measurement && cleanText(measurement)) {
+    measurementLines.push(cleanText(measurement))
+  }
+  if (!measurementLines.length) {
+    measurementLines.push('Primary KPI — +8–12% ROS on participating SKUs vs last year/control by retailer.')
+  }
+  const measurementHtml = measurementLines.length
+    ? `<div class="callout callout-measurement"><h4>Measurement</h4><p>${escapeHtml(measurementLines.join('. '))}</p></div>`
+    : ''
+
+  const extras: string[] = []
+  if (sections['Pack Line']) {
+    extras.push(`<p><strong>Pack line</strong> — ${escapeHtml(sections['Pack Line'])}</p>`)
+  }
+  if (sections['Staff Line']) {
+    extras.push(`<p><strong>Staff line</strong> — ${escapeHtml(sections['Staff Line'])}</p>`)
+  }
+
+  const roomHtml = renderMultiAgentRoomHtml(meta?.multiAgentEvaluation)
+  const upgradeHtml = renderMultiAgentImprovementHtml(meta?.multiAgentImprovement)
+
+  return [chipsHtml, roomHtml, upgradeHtml, decisionHtml, reasonsHtml, focusGrid, measurementHtml, fixPlanHtml, extras.join('')].filter(Boolean).join('')
 }
 
-function renderScoreboard(board: any) {
-  if (!board) return ''
-  const entries = Object.entries(board)
-    .filter(([key]) => !['decision', 'conditions'].includes(key))
-    .map(([key, value]: [string, any]) => ({
-      label: prettifyScoreboardKey(key),
-      status: (value?.status || 'NA') as string,
-      why: value?.why || '',
-      fix: value?.fix || '',
-    }))
-    .filter((row) => row.label)
-  if (!entries.length) return ''
-  const rows = entries
-    .map(
-      (row) => `<tr>
-    <th scope="row">
-      <span class="score-label">${escapeHtml(row.label)}</span>
-      <span class="score-pill score-pill-${escapeHtml(row.status.toLowerCase())}">${escapeHtml(row.status)}</span>
-    </th>
-    <td>${row.why ? escapeHtml(row.why) : '<span class="muted">No rationale supplied.</span>'}</td>
-    <td>${row.fix ? escapeHtml(row.fix) : '<span class="muted">–</span>'}</td>
-  </tr>`
+function deriveWorstStatus(statuses: Array<string | undefined | null>): string | undefined {
+  const order: Record<string, number> = { RED: 0, AMBER: 1, GREEN: 2 }
+  let current: { status: string; score: number } | null = null
+  for (const status of statuses) {
+    const normalized = String(status || '').toUpperCase()
+    if (!normalized || !(normalized in order)) continue
+    const value = order[normalized]
+    if (!current || value < current.score) {
+      current = { status: normalized, score: value }
+    }
+  }
+  return current?.status
+}
+
+function renderEvaluationReasonGrid(values: { works?: string; breaks?: string }) {
+  const cards: string[] = []
+  if (values.works) {
+    cards.push(
+      `<div class="evaluation-reason"><h4>Why it works</h4><p>${escapeHtml(values.works)}</p></div>`
     )
-    .join('')
-  return `<div class="scoreboard">
-    <div class="scoreboard-title">Scoreboard</div>
-    <table>
-      <thead>
-        <tr><th scope="col">Lens</th><th scope="col">Why it sits here</th><th scope="col">Fix path</th></tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>
-  </div>`
+  }
+  if (values.breaks) {
+    cards.push(
+      `<div class="evaluation-reason"><h4>Where it breaks</h4><p>${escapeHtml(values.breaks)}</p></div>`
+    )
+  }
+  if (!cards.length) return ''
+  return `<div class="evaluation-reason-grid">${cards.join('')}</div>`
+}
+
+function renderEvaluationFocusCard(options: {
+  title: string
+  status?: string
+  lead?: string
+  summary?: string
+  fix?: string
+  listTitle?: string
+  list?: string[]
+  tail?: string
+}) {
+  const { title, status, lead, summary, fix, listTitle, list, tail } = options
+  const content: string[] = []
+  if (lead) content.push(`<p class="evaluation-focus-lead">${escapeHtml(lead)}</p>`)
+  if (summary) content.push(`<p>${escapeHtml(summary)}</p>`)
+  if (fix) content.push(`<p class="evaluation-focus-fix">${escapeHtml(fix)}</p>`)
+  if (tail && tail !== fix) content.push(`<p class="evaluation-focus-tail">${escapeHtml(tail)}</p>`)
+  const listHtml =
+    list && list.length
+      ? `<div class="evaluation-focus-list"><strong>${escapeHtml(listTitle || 'Details')}</strong><ul>${list
+          .map((item) => `<li>${escapeHtml(item)}</li>`)
+          .join('')}</ul></div>`
+      : ''
+  if (!content.length && !listHtml) return ''
+  const badge = describeTrafficStatus(status)
+  return `<article class="evaluation-focus">
+    <div class="evaluation-focus-header">
+      <h4>${escapeHtml(title)}</h4>
+      ${badge ? `<span class="evaluation-pill ${badge.className}">${badge.label}</span>` : ''}
+    </div>
+    ${content.join('')}
+    ${listHtml}
+  </article>`
+}
+
+function describeTrafficStatus(status?: string | null) {
+  if (!status) return null
+  const normalized = String(status).toUpperCase()
+  const labels: Record<string, string> = {
+    GREEN: 'On brief',
+    AMBER: 'Needs tighten',
+    RED: 'Off brief',
+  }
+  return labels[normalized]
+    ? { label: labels[normalized], className: `is-${normalized.toLowerCase()}` }
+    : null
 }
 
 function prettifyScoreboardKey(key: string): string {
@@ -908,6 +1972,25 @@ function extractRiskLines(board: any): string[] {
     .filter((line): line is string => Boolean(line))
 }
 
+function collectConditionLines(board: any): string[] {
+  if (!board || typeof board !== 'object') return []
+  const out: string[] = []
+  for (const [key, value] of Object.entries(board as Record<string, any>)) {
+    if (['decision', 'conditions', 'measurement'].includes(key)) continue
+    const status = String(value?.status || '').toUpperCase()
+    if (!status || status === 'GREEN') continue
+    const fix = cleanText(value?.fix || '')
+    const why = cleanText(value?.why || '')
+    if (fix) {
+      out.push(`${prettifyScoreboardKey(key)} — ${fix}`)
+    } else if (why) {
+      out.push(`${prettifyScoreboardKey(key)} — ${why}`)
+    }
+    if (out.length >= 4) break
+  }
+  return dedupeStrings(out)
+}
+
 function formatDate(input: any): string | null {
   if (!input) return null
   const date = input instanceof Date ? input : new Date(input)
@@ -918,7 +2001,35 @@ function formatDate(input: any): string | null {
 function renderStrategistSection(snapshot: SnapshotRich) {
   const text = snapshot.narratives.strategist?.sanitized || snapshot.narratives.strategist?.raw || ''
   if (!text.trim()) return '<p>No strategist scenarios saved.</p>'
-  return renderStructuredNarrative(text)
+  const sparkHighlights = collectSparkFacts((snapshot as any).spark)
+    .map((fact) => fact.claim)
+    .slice(0, 4)
+  const sparkCallout = sparkHighlights.length
+    ? `<div class="callout callout-spark">
+        <h4>Spark cues carried through</h4>
+        <ul>${sparkHighlights.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>
+      </div>`
+    : ''
+
+  const parsed = parseStrategistNarrative(text)
+  const cards = parsed.scenarios.map(
+    (scenario) => `<article class="strategist-card">
+      <h4>${escapeHtml(scenario.label)}</h4>
+      ${markdownToHtml(scenario.body)}
+    </article>`
+  )
+  const measurementHtml = parsed.measurement
+    ? `<div class="callout callout-measurement"><h4>Measurement</h4><p>${escapeHtml(parsed.measurement)}</p></div>`
+    : ''
+  const summaryHtml =
+    parsed.summary.length > 0
+      ? `<div class="callout callout-summary">
+          <h4>Summary</h4>
+          <ul>${parsed.summary.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+        </div>`
+      : ''
+
+  return `${sparkCallout}<div class="strategist-grid">${cards.join('')}</div>${measurementHtml}${summaryHtml}`
 }
 
 function renderIdeationSection(snapshot: SnapshotRich) {
@@ -973,10 +2084,39 @@ function renderIdeationSection(snapshot: SnapshotRich) {
 }
 
 function renderSynthesisSection(snapshot: SnapshotRich) {
-  const rider = extractSynthesisRider(snapshot.narratives.synthesis?.raw || '')
-  const stripped = stripSynthesisRider(snapshot.narratives.synthesis?.sanitized || snapshot.narratives.synthesis?.raw || '')
+  const rawText = snapshot.narratives.synthesis?.sanitized || snapshot.narratives.synthesis?.raw || ''
+  const rider = extractSynthesisRider(rawText || '')
+  let text = stripSynthesisRider(rawText || '')
+  const measurementMatch = /Measurement\s+—\s*(.+)/i.exec(text)
+  let measurement = ''
+  if (measurementMatch) {
+    measurement = measurementMatch[1].trim()
+    text = text.replace(measurementMatch[0], '').trim()
+  }
+  const packMatch = /Pack line\s+—\s*(.+)/i.exec(text)
+  let packLine = ''
+  if (packMatch) {
+    packLine = packMatch[1].trim()
+    text = text.replace(packMatch[0], '').trim()
+  }
+  const staffMatch = /Staff line\s+—\s*(.+)/i.exec(text)
+  let staffLine = ''
+  if (staffMatch) {
+    staffLine = staffMatch[1].trim()
+    text = text.replace(staffMatch[0], '').trim()
+  }
+
   const blocks: string[] = []
-  blocks.push(renderMarkdownBlock(stripped || '_No synthesis narrative._'))
+  blocks.push(renderMarkdownBlock(text || '_No synthesis narrative._'))
+  if (measurement) {
+    blocks.push(`<div class="callout callout-measurement"><h4>Measurement</h4><p>${escapeHtml(measurement)}</p></div>`)
+  }
+  if (packLine || staffLine) {
+    const extras: string[] = []
+    if (packLine) extras.push(`<p><strong>Pack line</strong> — ${escapeHtml(packLine)}</p>`)
+    if (staffLine) extras.push(`<p><strong>Staff line</strong> — ${escapeHtml(staffLine)}</p>`)
+    blocks.push(`<div class="synthesis-extras">${extras.join('')}</div>`)
+  }
   if (rider) {
     blocks.push(renderRiderTable(rider))
   }
@@ -986,6 +2126,122 @@ function renderSynthesisSection(snapshot: SnapshotRich) {
 function renderMarkdownBlock(value: string | null | undefined) {
   if (!value || !value.trim()) return '<p>No content.</p>'
   return markdownToHtml(value)
+}
+
+function renderEvaluationNarrative(text: string): string {
+  const sections = parseEvaluationSections(text)
+  const order = [
+    'Verdict',
+    'Why It Works',
+    'Where It Breaks',
+    'Fix It',
+    'Retailer Reality',
+    'Tighten',
+    'Stretch',
+    'Hook Upgrade',
+    'Hook Shortlist',
+    'Measurement',
+    'Pack Line',
+    'Staff Line',
+  ]
+  const parts: string[] = []
+  for (const key of order) {
+    const content = sections[key]
+    if (!content) continue
+    if (key === 'Hook Shortlist') {
+      const hooks = content
+        .split(/\n|•|-|\u2022/)
+        .map((line) => cleanText(line))
+        .filter(Boolean)
+      if (hooks.length) {
+        parts.push(renderListSection('Hook shortlist', hooks))
+      }
+      continue
+    }
+    if (key === 'Measurement') {
+      parts.push(`<div class="callout callout-measurement"><h4>Measurement</h4><p>${escapeHtml(content)}</p></div>`)
+      continue
+    }
+    if (key === 'Pack Line' || key === 'Staff Line') {
+      parts.push(`<p><strong>${escapeHtml(key)}</strong> — ${escapeHtml(content)}</p>`)
+      continue
+    }
+    parts.push(`<p><strong>${escapeHtml(key)}</strong> — ${escapeHtml(content)}</p>`)
+  }
+  return parts.length ? `<div class="structured-block">${parts.join('')}</div>` : renderMarkdownBlock(text)
+}
+
+function parseEvaluationSections(text: string): Record<string, string> {
+  let cleaned = text.replace(/\r\n/g, '\n').trim()
+  cleaned = cleaned.replace(/-\s*([^-\n]+?)\s+Measurement\s*:/gi, (_, hook) => `- ${hook.trim()}\nMeasurement:`)
+  const sections: Record<string, string> = {}
+  const regex = /([A-Za-z’'&]+(?:[ \t]+[A-Za-z’'&]+)*)\s*(?:—|:)\s+/g
+  let match: RegExpExecArray | null
+  let lastIndex = 0
+  let currentKey: string | null = null
+  while ((match = regex.exec(cleaned))) {
+    const heading = normalizeHeading(match[1])
+    if (heading === 'Source') {
+      continue
+    }
+    if (currentKey) {
+      sections[currentKey] = cleaned.slice(lastIndex, match.index).trim()
+    }
+    currentKey = heading
+    lastIndex = match.index + match[0].length
+  }
+  if (currentKey) {
+    sections[currentKey] = cleaned.slice(lastIndex).trim()
+  }
+  return sections
+}
+
+function normalizeHeading(raw: string): string {
+  const heading = raw.replace(/[^A-Za-z’' ]+/g, '').trim()
+  return heading
+    .split(' ')
+    .map((word) => (word ? word[0].toUpperCase() + word.slice(1).toLowerCase() : ''))
+    .join(' ')
+}
+
+function parseStrategistNarrative(text: string): { scenarios: Array<{ label: string; body: string }>; measurement: string | null; summary: string[] } {
+  const cleaned = text.replace(/\r\n/g, '\n').trim()
+  const scenarioRegex = /Scenario\s+—\s*([^—\n]+?)\s+—\s*/g
+  let match: RegExpExecArray | null
+  let lastIndex = 0
+  let currentLabel: string | null = null
+  const scenarios: Array<{ label: string; body: string }> = []
+  while ((match = scenarioRegex.exec(cleaned))) {
+    if (currentLabel) {
+      const body = cleaned.slice(lastIndex, match.index).trim()
+      scenarios.push({ label: currentLabel, body })
+    }
+    currentLabel = match[1].trim()
+    lastIndex = match.index + match[0].length
+  }
+  let measurement: string | null = null
+  const measurementRegex = /Measurement\s+—\s*([^\n]+)/i
+  const measurementMatch = measurementRegex.exec(cleaned)
+  if (measurementMatch) {
+    measurement = measurementMatch[1].trim()
+  }
+  if (currentLabel) {
+    const tailEnd = measurementMatch ? measurementMatch.index : cleaned.length
+    const body = cleaned.slice(lastIndex, tailEnd).trim()
+    scenarios.push({ label: currentLabel, body })
+  }
+  const summary: string[] = []
+  const summaryRegex = /Summary\s*(?:\n|[-–]\s*)([\s\S]*)$/i
+  const summaryMatch = summaryRegex.exec(cleaned)
+  if (summaryMatch) {
+    summary.push(
+      ...summaryMatch[1]
+        .split(/\s*[-–]\s+/)
+        .map((line) => cleanText(line))
+        .filter(Boolean)
+    )
+  }
+  return { scenarios, measurement, summary }
 }
 
 function renderStructuredNarrative(raw: string) {
@@ -1269,10 +2525,62 @@ function formatResearchSource(raw: string) {
   if (!candidate) return ''
   try {
     const url = new URL(candidate)
-    return url.hostname.replace(/^www\./, '')
+    return `Source: ${url.hostname.replace(/^www\./, '')}`
   } catch {
-    return candidate
+    return `Source: ${candidate}`
   }
+}
+
+function collectSparkFacts(payload: any): Array<{ claim: string; source?: string }> {
+  if (!payload) return []
+  const analysis = payload.analysis || {}
+  const hookOptions = Array.isArray(payload?.hookPlayground?.options)
+    ? payload.hookPlayground.options.filter((opt: any) => opt && typeof opt.headline === 'string')
+    : []
+  const cadenceIdeas = Array.isArray(payload?.hookPlayground?.cadence)
+    ? payload.hookPlayground.cadence.filter((line: any) => typeof line === 'string' && line.trim())
+    : []
+  const facts: Array<{ claim: string; source?: string }> = []
+  const push = (claim?: string, source?: string) => {
+    if (!claim) return
+    const text = String(claim).trim()
+    if (!text) return
+    facts.push({ claim: text, source })
+  }
+
+  push(analysis.summary, 'Spark summary')
+  push(analysis.audience, 'Spark audience')
+  const valueLine =
+    (typeof analysis?.value?.description === 'string' && analysis.value.description) ||
+    (typeof analysis?.value?.summary === 'string' && analysis.value.summary) ||
+    ''
+  push(valueLine, 'Value lens')
+  push(analysis.cadence, 'Cadence')
+  const tradeLine = [analysis?.trade?.reward, analysis?.trade?.guardrail]
+    .map((part) => (typeof part === 'string' ? part.trim() : ''))
+    .filter(Boolean)
+    .join(' • ')
+  push(tradeLine, 'Trade cue')
+
+  if (Array.isArray(analysis.tensions)) {
+    analysis.tensions
+      .filter((line: any) => typeof line === 'string' && line.trim())
+      .slice(0, 4)
+      .forEach((line: string) => push(line, 'Shopper tension'))
+  }
+  if (Array.isArray(analysis.compliance)) {
+    analysis.compliance
+      .filter((line: any) => typeof line === 'string' && line.trim())
+      .slice(0, 4)
+      .forEach((line: string) => push(line, 'Compliance guardrail'))
+  }
+  hookOptions.slice(0, 3).forEach((opt: any) => {
+    const support = opt.support ? ` — ${opt.support}` : ''
+    push(`Hook: ${opt.headline}${support}`, 'Hook contender')
+  })
+  cadenceIdeas.slice(0, 3).forEach((line: string) => push(`Cadence riff: ${line}`, 'Cadence cue'))
+
+  return facts
 }
 
 function renderResearchBenchmarks(data: any) {
@@ -1528,6 +2836,53 @@ body{margin:0;background:var(--canvas);font-family:"IBM Plex Sans","Inter","Sego
 .chip-row .chip{background:rgba(14,165,233,0.12);color:var(--accent);border:1px solid rgba(14,165,233,0.25);}
 .summary-tags{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px;}
 .summary-tag{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;background:rgba(14,165,233,0.16);color:var(--accent);font-size:12px;letter-spacing:0.08em;text-transform:uppercase;border:1px solid rgba(14,165,233,0.26);}
+.multi-room{border:1px solid rgba(15,23,42,0.08);border-radius:16px;padding:18px;background:#f8fafc;margin-bottom:18px;}
+.multi-room-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px;}
+.multi-room-label{letter-spacing:0.28em;text-transform:uppercase;font-size:11px;color:#64748b;margin:0;}
+.multi-room-verdict{margin:4px 0 0;font-size:22px;font-weight:600;color:#0f172a;}
+.multi-room-notes{margin:6px 0 0;font-size:12px;color:#475569;}
+.multi-room-body{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:14px;}
+.multi-room-list{border:1px solid rgba(15,23,42,0.06);border-radius:12px;padding:12px;background:#ffffff;}
+.multi-room-list-title{font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:#475569;margin-bottom:6px;}
+.multi-room-list ul{margin:0;padding-left:18px;font-size:13px;color:#0f172a;}
+.multi-room-list li{margin-bottom:4px;}
+.multi-room-agents{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;}
+.multi-room-agent{border:1px solid rgba(15,23,42,0.08);border-radius:12px;padding:12px;background:#ffffff;}
+.multi-room-agent-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
+.multi-room-agent-name{text-transform:uppercase;font-size:11px;color:#475569;letter-spacing:0.18em;}
+.multi-room-agent-pill{font-size:11px;padding:4px 8px;border-radius:999px;background:rgba(14,165,233,0.14);color:#0369a1;border:1px solid rgba(14,165,233,0.32);}
+.multi-upgrade{border:1px solid rgba(15,23,42,0.08);border-radius:16px;padding:20px;background:#ffffff;margin-bottom:18px;}
+.multi-upgrade-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;}
+.multi-upgrade-label{letter-spacing:0.28em;text-transform:uppercase;font-size:11px;color:#64748b;margin:0;}
+.multi-upgrade-title{margin:6px 0 0;font-size:20px;font-weight:600;color:#0f172a;}
+.multi-upgrade-notes{margin:4px 0 0;font-size:12px;color:#475569;}
+.multi-upgrade-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-bottom:16px;}
+.multi-upgrade-card{border:1px solid rgba(15,23,42,0.08);border-radius:12px;padding:14px;background:#f8fafc;}
+.multi-upgrade-card-head{display:flex;align-items:center;justify-content:space-between;font-size:13px;font-weight:600;color:#0f172a;margin-bottom:6px;}
+.multi-upgrade-pill{font-size:11px;padding:4px 8px;border-radius:999px;background:rgba(14,165,233,0.12);color:#0369a1;border:1px solid rgba(14,165,233,0.24);}
+.multi-upgrade-summary{margin:0 0 6px;font-size:13px;color:#0f172a;}
+.multi-upgrade-offer{font-size:12px;color:#0369a1;margin-bottom:6px;}
+.multi-upgrade-hooks ul,.multi-upgrade-why ul{margin:4px 0 0;padding-left:18px;font-size:12px;color:#0f172a;}
+.multi-upgrade-hooks strong,.multi-upgrade-why strong,.multi-upgrade-trade strong,.multi-upgrade-mechanic strong{display:block;font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:#475569;margin-bottom:2px;}
+.multi-upgrade-runners strong{display:block;font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:#475569;margin-bottom:2px;}
+.multi-upgrade-runners ul{margin:4px 0 0;padding-left:18px;font-size:12px;color:#0f172a;}
+.multi-upgrade-trade,.multi-upgrade-mechanic{font-size:12px;color:#0f172a;margin-bottom:4px;}
+.multi-upgrade-hero{font-size:12px;color:#0f172a;margin-bottom:4px;}
+.multi-upgrade-hero strong{display:block;font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:#475569;margin-bottom:2px;}
+.multi-upgrade-agents{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;}
+.multi-upgrade-agent{border:1px solid rgba(15,23,42,0.08);border-radius:12px;padding:12px;background:#f9fafc;}
+.multi-upgrade-agent-name{text-transform:uppercase;font-size:11px;color:#475569;letter-spacing:0.18em;margin-bottom:4px;}
+.multi-upgrade-agent ul{margin:0;padding-left:18px;font-size:12px;color:#0f172a;}
+.lens-section{border:1px solid rgba(15,23,42,0.08);border-radius:16px;padding:16px;background:#ffffff;}
+.lens-section h3{margin:0 0 10px;font-size:12px;letter-spacing:0.2em;text-transform:uppercase;color:#475569;}
+.lens-section ul{margin:0;padding-left:18px;color:#0f172a;}
+.lens-section li{margin-bottom:6px;}
+.framing-structured{display:flex;flex-direction:column;gap:18px;}
+.framing-summary{border:1px solid rgba(15,23,42,0.08);border-radius:18px;padding:18px;background:linear-gradient(180deg,#ffffff 0%,#f8fafc 100%);}
+.framing-summary p{margin:0 0 8px;}
+.framing-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;}
+.framing-narrative{border:1px solid rgba(15,23,42,0.08);border-radius:18px;padding:18px;background:#ffffff;}
+.framing-narrative :where(p,ul){margin-bottom:10px;}
 .structured-block{display:flex;flex-direction:column;gap:16px;font-size:15px;}
 .structured-block h3{margin:14px 0 6px;font-size:13px;letter-spacing:0.24em;text-transform:uppercase;color:var(--muted);font-weight:600;}
 .structured-block p{margin:0;color:var(--ink);line-height:1.65;font-size:15px;}
@@ -1549,6 +2904,33 @@ body{margin:0;background:var(--canvas);font-family:"IBM Plex Sans","Inter","Sego
 .ideation-list ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:14px;}
 .ideation-list li{padding-bottom:12px;border-bottom:1px solid rgba(148,163,184,0.2);}
 .ideation-list li:last-child{border-bottom:none;padding-bottom:0;}
+.spark-panel{position:relative;overflow:hidden;border-radius:28px;padding:28px;border:1px solid rgba(14,165,233,0.22);background:linear-gradient(135deg,rgba(13,148,136,0.12),rgba(59,130,246,0.1),rgba(234,179,8,0.12));box-shadow:0 24px 48px rgba(15,23,42,0.08);}
+.spark-panel::after{content:\"\";position:absolute;inset:0;pointer-events:none;background:radial-gradient(circle at 15% 20%,rgba(16,185,129,0.25),transparent 45%),radial-gradient(circle at 85% 0%,rgba(59,130,246,0.2),transparent 40%),radial-gradient(circle at 50% 120%,rgba(234,179,8,0.25),transparent 55%);opacity:0.7;animation:sparkGlow 8s ease-in-out infinite alternate;}
+.spark-panel>*{position:relative;z-index:1;}
+.spark-panel-head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:18px;}
+.spark-panel-eyebrow{letter-spacing:0.32em;text-transform:uppercase;font-size:11px;color:#0f766e;margin:0 0 4px 0;}
+.spark-panel-title{margin:0;font-size:22px;font-weight:600;color:#0f172a;}
+.spark-panel-subtitle{margin:4px 0 0;font-size:14px;color:#0f172a99;}
+.spark-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:999px;border:1px solid rgba(255,255,255,0.7);background:rgba(255,255,255,0.85);font-size:11px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:#0f172a;}
+.spark-chip-dot{width:8px;height:8px;border-radius:999px;background:#059669;box-shadow:0 0 8px rgba(5,150,105,0.8);}
+.spark-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:18px;}
+.spark-card{border-radius:18px;padding:16px;border:1px solid rgba(255,255,255,0.8);background:rgba(255,255,255,0.9);backdrop-filter:blur(6px);box-shadow:0 10px 25px rgba(15,23,42,0.08);}
+.spark-card h4{margin:0 0 8px;font-size:11px;letter-spacing:0.24em;text-transform:uppercase;color:#475569;}
+.spark-card p{margin:0;font-size:14px;color:#0f172a;}
+.spark-card ul{margin:0;padding-left:18px;font-size:14px;color:#0f172a;}
+.spark-card li{margin:4px 0;}
+.spark-badge-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px;}
+.spark-badge{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:8px 14px;font-size:12px;font-weight:600;color:#0f172a;background:rgba(255,255,255,0.9);border:1px solid rgba(255,255,255,0.8);box-shadow:0 8px 20px rgba(15,23,42,0.08);}
+.spark-badge small{display:block;font-size:11px;font-weight:400;color:#475569;}
+.spark-badge--hooks{background:rgba(16,185,129,0.12);border-color:rgba(16,185,129,0.4);color:#065f46;}
+.spark-badge--cadence{background:rgba(59,130,246,0.12);border-color:rgba(59,130,246,0.4);color:#0f4c81;}
+.spine-grid{display:grid;gap:18px;margin-top:16px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));}
+.spine-card{border:1px solid rgba(15,23,42,0.08);border-radius:20px;padding:20px;background:linear-gradient(180deg,#ffffff 0%,#f6f8fc 100%);box-shadow:0 16px 28px rgba(15,23,42,0.05);}
+.spine-card h4{margin:0 0 10px;font-size:13px;letter-spacing:0.24em;text-transform:uppercase;color:#0f172a;}
+.spine-card p{margin:0 0 10px;font-size:14px;line-height:1.6;}
+.evidence-grid{display:grid;gap:18px;margin-top:10px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));}
+.wild-grid{display:grid;gap:18px;margin-top:12px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));}
+@keyframes sparkGlow{0%{opacity:0.55;transform:scale(1);}100%{opacity:0.85;transform:scale(1.05);}}
 .idea-hook{display:flex;flex-direction:column;gap:4px;font-weight:600;color:var(--ink);}
 .idea-hook small{font-size:11px;letter-spacing:0.08em;color:#64748b;text-transform:uppercase;}
 .idea-xfy{font-size:13px;color:#0369a1;margin-top:4px;}
@@ -1585,6 +2967,32 @@ main p,main li{orphans:3;widows:3;}
 .callout h4{margin:0 0 8px;font-size:13px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);font-weight:600;}
 .callout-conditions{background:rgba(248,113,113,0.1);border-color:rgba(248,113,113,0.25);}
 .callout-measurement{background:rgba(14,165,233,0.1);border-color:rgba(14,165,233,0.25);}
+.callout-offeriq{background:rgba(16,185,129,0.12);border-color:rgba(16,185,129,0.32);}
+.callout-decision{background:rgba(14,165,233,0.12);border-color:rgba(14,165,233,0.35);}
+.evaluation-reason-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin:18px 0;}
+.evaluation-reason{border:1px solid rgba(15,23,42,0.08);border-radius:16px;padding:18px;background:linear-gradient(180deg,#ffffff 0%,#f8fafc 100%);box-shadow:0 10px 20px rgba(15,23,42,0.04);}
+.evaluation-reason h4{margin:0 0 8px;font-size:12px;letter-spacing:0.2em;text-transform:uppercase;color:#475569;}
+.evaluation-focus-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px;margin:24px 0;}
+.evaluation-focus{border:1px solid rgba(15,23,42,0.12);border-radius:18px;padding:20px;background:linear-gradient(180deg,#ffffff 0%,#f6f8fc 100%);box-shadow:0 16px 30px rgba(15,23,42,0.05);}
+.evaluation-focus-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;}
+.evaluation-focus h4{margin:0;font-size:12px;letter-spacing:0.2em;text-transform:uppercase;color:#475569;}
+.evaluation-focus p{margin:8px 0;color:#0f172a;}
+.evaluation-focus-lead{font-weight:600;color:#0f172a;}
+.evaluation-focus-fix{font-weight:600;color:#0f172a;}
+.evaluation-focus-tail{color:#475569;font-style:italic;}
+.evaluation-pill{border-radius:999px;padding:4px 10px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;border:1px solid transparent;}
+.evaluation-pill.is-green{background:rgba(16,185,129,0.12);color:#047857;border-color:rgba(16,185,129,0.2);}
+.evaluation-pill.is-amber{background:rgba(251,191,36,0.15);color:#92400e;border-color:rgba(251,191,36,0.3);}
+.evaluation-pill.is-red{background:rgba(248,113,113,0.18);color:#b91c1c;border-color:rgba(248,113,113,0.28);}
+.evaluation-focus-list{margin-top:12px;}
+.evaluation-focus-list strong{display:block;font-size:12px;letter-spacing:0.2em;text-transform:uppercase;color:#475569;margin-bottom:6px;}
+.evaluation-focus-list ul{margin:0;padding-left:18px;color:#0f172a;}
+.strategist-grid{display:grid;gap:18px;margin-bottom:12px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));}
+.strategist-card{border:1px solid rgba(15,23,42,0.08);border-radius:18px;padding:18px;background:#f6f8fc;box-shadow:0 10px 22px rgba(15,23,42,0.05);}
+.strategist-card h4{margin:0 0 8px;font-size:13px;letter-spacing:0.2em;text-transform:uppercase;color:#1f2937;}
+.strategist-card p{margin:0 0 10px;font-size:14px;line-height:1.5;}
+.callout-summary{background:rgba(59,130,246,0.12);border-color:rgba(59,130,246,0.3);}
+.synthesis-extras p{margin:6px 0;font-size:14px;color:#0f172a;}
 .services-callout ul{margin:0 0 12px 18px;padding:0;font-size:14px;}
 .services-callout li{margin-bottom:6px;}
 footer{text-align:center;font-size:12px;color:#94a3b8;margin-top:32px;}
@@ -1685,4 +3093,41 @@ const TrudyExportToggles = (() => {
 })()
 </script>
 </html>`
+}
+function renderScoreboard(board: any) {
+  if (!board || typeof board !== 'object') return ''
+  const rows = Object.entries(board)
+    .filter(([key]) => !['decision', 'conditions', 'measurement'].includes(key))
+    .map(([key, value]: [string, any]) => {
+      const label = prettifyScoreboardKey(key)
+      const status = String(value?.status || 'NA').toUpperCase()
+      const why = cleanText(value?.why || '')
+      const fix = cleanText(value?.fix || '')
+      return { label, status, why, fix }
+    })
+    .filter((row) => row.why || row.fix)
+  if (!rows.length) return ''
+  return `
+    <div class="scoreboard">
+      <div class="scoreboard-title">Scoreboard</div>
+      <table>
+        <thead><tr><th>Area</th><th>Status</th><th>Notes</th></tr></thead>
+        <tbody>
+          ${rows
+            .map((row) => {
+              const pillClass =
+                row.status === 'GREEN' ? 'score-pill-green' :
+                row.status === 'RED' ? 'score-pill-red' :
+                row.status === 'AMBER' ? 'score-pill-amber' : 'score-pill-na'
+              return `<tr>
+                <td>${escapeHtml(row.label)}</td>
+                <td><span class="score-pill ${pillClass}">${escapeHtml(row.status)}</span></td>
+                <td>${escapeHtml(row.fix || row.why || '')}</td>
+              </tr>`
+            })
+            .join('')}
+        </tbody>
+      </table>
+    </div>
+  `
 }

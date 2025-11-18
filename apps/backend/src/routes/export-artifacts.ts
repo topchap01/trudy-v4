@@ -13,6 +13,7 @@ import { writeCampaignMemory } from '../lib/memory-store.js'
 import type { ExportOptions } from '../export/types.js'
 import { slug } from '../export/utils.js'
 import { exportDocxFromSummary } from '../docx/exportDocx.js'
+import { proofreadHtml } from '../lib/proofreader.js'
 
 const router = Router()
 const require = createRequire(import.meta.url)
@@ -67,13 +68,14 @@ router.post('/campaigns/:id/exports', async (req, res, next) => {
     })
 
     const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19)
-    const { html, title, model } = renderExportHtml(snapshot, {
+    let { html, title, model } = renderExportHtml(snapshot, {
       sections,
       theme,
       judgeVerdict,
       timestamp,
       mode: mode ?? undefined,
     })
+    html = await proofreadHtml(html, { scope: 'export', campaignId: snapshot.campaign.id })
 
     if (model.governance.blockers.length) {
       return res.status(409).json({
@@ -271,12 +273,13 @@ router.get('/exports/pdf', async (req, res, next) => {
     })
 
     const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19)
-    const { html, title, model } = renderExportHtml(snapshot, {
+    let { html, title, model } = renderExportHtml(snapshot, {
       sections: sections || {},
       theme: {},
       judgeVerdict,
       timestamp,
     })
+    html = await proofreadHtml(html, { scope: 'export', campaignId: snapshot.campaign.id })
 
     const dir = ensureExportDir(snapshot.campaign.id)
     const baseFile = buildArtifactBase(snapshot.campaign.title || snapshot.campaign.id)

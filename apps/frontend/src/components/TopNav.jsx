@@ -8,7 +8,9 @@ export default function TopNav() {
         <Link to="/dashboard" className="font-semibold tracking-tight">Trudy</Link>
         <div className="flex-1" />
         <Link to="/dashboard" className="text-sm underline">Dashboard</Link>
+        <Link to="/spark" className="text-sm underline">Spark</Link>
         <Link to="/campaigns/new" className="text-sm underline">New campaign</Link>
+        <Link to="/promo-builder" className="text-sm underline">Promo builder</Link>
         {id ? (
           <Link to={`/campaigns/${id}/war-room`} className="text-sm underline">War Room</Link>
         ) : null}

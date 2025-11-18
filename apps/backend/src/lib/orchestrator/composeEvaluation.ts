@@ -142,7 +142,7 @@ function normaliseHeuristics(h?: string | string[]): string[] {
   if (fr) out.push(`Hassle: ${fr[1]} — one screen, no receipt uploads.`)
   if (pz) out.push(`Prize shape: ${pz[1]} — mix instant + weekly + hero.`)
   if (rs) out.push(`Retailer ask score ~${rs[1]} — zero staff involvement.`)
-  if (hc) out.push(`Hook clarity index ~${hc[1]} — 2–6 words on fixture.`)
+  if (hc) out.push(`Hook clarity index ~${hc[1]} — keep it sharp, brand-locked, and fixture-ready.`)
   return out.slice(0, 6)
 }
 
@@ -481,12 +481,12 @@ export function composeEvaluation(
             'Fair Odds. Fast Wins.',
           ]
   ))
-  const hooks = clean([
-    '',
-    '## Hooks worth testing',
-    ...hooksLines.map(h => `- **${h}**`),
-    'Keep them to 2–6 words. If a staffer can’t say it in one breath, rewrite it.',
-  ].join('\n'))
+const hooks = clean([
+  '',
+  '## Hooks worth testing',
+  ...hooksLines.map(h => `- **${h}**`),
+  'Hooks must fit in a single confident breath; if a staffer would stumble, rewrite it.',
+].join('\n'))
 
   // — Proof (prospective vs retro) —
   const proofProspective = clean([

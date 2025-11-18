@@ -77,7 +77,8 @@ function isAssuredValue(ctx: CampaignContext, diag: any): boolean {
   const cashback = spec?.cashback || null
   const viaJSON = Boolean(diag?.ui?.assuredValue || diag?._assuredValue)
 
-  const assuredViaCashback = type === 'CASHBACK' || !!cashback
+  const hasCashback = Boolean(type === 'CASHBACK' || cashback)
+  const assuredViaCashback = hasCashback && Boolean(!cashback || cashback.assured !== false)
   const assuredViaGWP = (type === 'GWP' || !!gwp) && (gwp?.cap === 'UNLIMITED' || gwp?.cap == null)
 
   return viaJSON || assuredViaCashback || assuredViaGWP
@@ -156,7 +157,7 @@ Write a world-class, client-ready evaluation in Ferrier+Suit voice.
 - Sound like a sharp Australian strategist: commercially tough, behaviour-led, a little cheek is fine.
 - Treat the diagnosis JSON as facts; build a flowing argument around it.
 - Write free-form prose. Use short paragraphs and bullets only where they earn their keep.
-- Anchor to the brand’s line(s). If weak, sharpen to 2–6 premium words and use it consistently.
+- Anchor to the brand’s line(s). If weak, sharpen to a short premium line and use it consistently.
 - Prioritise: (1) what truly matters at the shelf, (2) value story, (3) staff-zero ops, (4) timing reality.
 - Weave in PromoTrack heuristics as reasoning — never label them by name.
 - No marketing bingo: avoid “friction”, “unlock”, “journey”, “levers”, “ladder”. Prefer “hassle”, “chances”, “mix of winners”.

@@ -100,9 +100,11 @@ export function preferredBrand(ctx: any): string | null {
 export function isAssuredValue(ctx: any): boolean {
   const spec = ctx?.briefSpec || {}
   const type = String(spec?.typeOfPromotion || '').toUpperCase()
-  const cashback = spec?.cashback
+  const cashback = spec?.cashback || null
   const gwp = spec?.gwp
-  const cashbackAssured = type === 'CASHBACK' || !!cashback
+  const cashbackAssured =
+    (type === 'CASHBACK' && (cashback ? cashback.assured !== false : true)) ||
+    Boolean(cashback && cashback.assured !== false)
   const gwpAssured = (type === 'GWP' || !!gwp) && (gwp?.cap === 'UNLIMITED' || gwp?.cap == null)
   return Boolean(cashbackAssured || gwpAssured)
 }

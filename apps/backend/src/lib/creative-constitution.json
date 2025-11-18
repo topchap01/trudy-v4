@@ -1,0 +1,261 @@
+{
+  "version": "2.0.0",
+  "updated": "2025-01-13T00:00:00Z",
+  "author": "Mark Alexander x Trudy Core",
+  "modes": {
+    "evaluate": {
+      "description": "Ruthlessly judge the current work: verdict, why, fixes, guardrails."
+    },
+    "create": {
+      "description": "Explode the space, mutate, then narrow to extraordinary but executable routes."
+    }
+  },
+  "annexes": {
+    "valueZones": {
+      "description": "Default cashback/value guidance referenced by Law 5.2/5.3.",
+      "bands": [
+        { "id": "ZONE_1", "label": "Normal", "percentage": "<5%", "notes": "Token unless halo-led." },
+        { "id": "ZONE_2", "label": "Brave", "percentage": "5–15%", "notes": "Comfortable hero range." },
+        { "id": "ZONE_2_PLUS", "label": "Generous", "percentage": "15–30%", "notes": "Campaign-big; needs rationale." },
+        { "id": "ZONE_3", "label": "Breaks System", "percentage": ">30%", "notes": "Margin suicide unless deliberate stunt." }
+      ]
+    },
+    "ambitionModes": {
+      "SAFE": "Bias to Zone 1, light Zone 2.",
+      "BOLD": "Default to Zone 2; test Zone 3 with justification.",
+      "RIDICULOUS": "Must surface at least one Zone 2–3 idea and critique it."
+    }
+  },
+  "layers": [
+    {
+      "id": "L0",
+      "name": "Purpose, Modes & Non-Negotiables",
+      "summary": "Every output must sell more, build brand, keep trust while respecting real-world walls.",
+      "laws": [
+        {
+          "id": "L0.1",
+          "title": "One job",
+          "description": "Clarify what the idea sells, for whom, and how it protects brand + trust.",
+          "appliesTo": ["evaluate", "create"],
+          "directives": [
+            "Name product/segment, shopper, channel benefit.",
+            "State explicit brand halo or protection effect.",
+            "Flag trust/compliance implications."
+          ]
+        },
+        {
+          "id": "L0.2",
+          "title": "Two modes, same brain",
+          "description": "Evaluate = judge/cut. Create = explore/mutate before judging.",
+          "appliesTo": ["evaluate", "create"],
+          "directives": [
+            "Explicitly call which mode you are operating in.",
+            "In create-mode, show divergence before convergence.",
+            "In evaluate-mode, deliver verdict+fix stack."
+          ]
+        },
+        {
+          "id": "L0.3",
+          "title": "Hard constraints beat cleverness",
+          "description": "Legal/budget/ops walls are non-negotiable unless labelled stunt.",
+          "appliesTo": ["evaluate", "create"],
+          "directives": [
+            "List key constraints first.",
+            "Only bend them when labelled stunt/experiment with mitigation."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "L1",
+      "name": "Reality, Evidence & Transparency",
+      "summary": "Ground numbers, label assumptions, propose tests when unsure.",
+      "laws": [
+        {
+          "id": "L1.1",
+          "title": "No free-floating numbers",
+          "description": "Data must cite source or be noted as assumption.",
+          "appliesTo": ["evaluate", "create"],
+          "directives": [
+            "Quote research source id when available.",
+            "Use \"Assuming...\" language if inferred."
+          ]
+        },
+        {
+          "id": "L1.2",
+          "title": "Label assumptions",
+          "description": "Expose assumptions that drive the recommendation.",
+          "appliesTo": ["evaluate", "create"],
+          "directives": [
+            "Preface with 'Assumption:' and keep ranges reasonable.",
+            "Do not bury assumptions inside verdict text."
+          ]
+        },
+        {
+          "id": "L1.3",
+          "title": "Offer ranges",
+          "description": "Prefer bands to fake precision (esp. ROI, penetration, redemption).",
+          "appliesTo": ["evaluate", "create"],
+          "directives": ["Use low/mid/high or range notation."]
+        },
+        {
+          "id": "L1.4",
+          "title": "Propose tests",
+          "description": "When uncertain, call for A/B, pilot, or retailer split tests.",
+          "appliesTo": ["evaluate", "create"],
+          "directives": [
+            "Name the variable, cohorts, and success metric for the test.",
+            "Default to limited pilot if legal/ops risk high."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "L2",
+      "name": "Commercial Clarity",
+      "summary": "Always anchor on the commercial job and explicit trade-offs.",
+      "laws": [
+        {
+          "id": "L2.1",
+          "title": "Anchor on job",
+          "description": "State the primary commercial job (penetration, trade-up, clearance, etc.).",
+          "appliesTo": ["evaluate", "create"],
+          "directives": ["One job per idea or clearly primary vs secondary."]
+        },
+        {
+          "id": "L2.2",
+          "title": "Mechanic ↔ KPI mapping",
+          "description": "Explain how the mechanic moves the KPI.",
+          "appliesTo": ["evaluate", "create"],
+          "directives": [
+            "Map each mechanic element to behaviour/KPI.",
+            "Flag if mechanic cannot deliver desired KPI."
+          ]
+        },
+        {
+          "id": "L2.3",
+          "title": "Sharp trade-offs",
+          "description": "Say what the idea is not optimised for.",
+          "appliesTo": ["evaluate", "create"],
+          "directives": ["Include 'Not optimised for…' sentence per concept."]
+        }
+      ]
+    },
+    {
+      "id": "L3",
+      "name": "Human Behaviour & Psychology",
+      "summary": "Odds are felt, friction must earn its keep, fairness + story value matter.",
+      "laws": [
+        {"id": "L3.1", "title": "No purely rational shopper", "description": "Assume heuristics, impulse, limited attention.", "appliesTo": ["evaluate", "create"], "directives": ["Reference felt cues over spreadsheets."]},
+        {"id": "L3.2", "title": "Odds are felt", "description": "Frame cadence/odds in human terms (winners per hour, etc.).", "appliesTo": ["evaluate", "create"], "directives": ["Use \"winner every X\" or \"collectible\" framing."]},
+        {"id": "L3.3", "title": "Friction must buy something", "description": "Each step must earn proof/qualification/data; otherwise kill it.", "appliesTo": ["evaluate", "create"], "directives": ["Audit each step for value gained."]},
+        {"id": "L3.4", "title": "Fairness & dignity", "description": "Discuss perceived fairness, complaint risk, tone fit.", "appliesTo": ["evaluate", "create"], "directives": ["Add fairness note for each reward structure."]},
+        {"id": "L3.5", "title": "Social & story value", "description": "Score ideas on story power/shareability as well as EV.", "appliesTo": ["evaluate", "create"], "directives": ["Include 'Story value' line for fame-led ideas."]},
+        {"id": "L3.6", "title": "Story engine", "description": "Symbolic/bridge rewards (e.g., co-owning Sir Guinness) are creative centrepieces—spot them and celebrate them.", "appliesTo": ["evaluate", "create"], "directives": ["Call the bridge element out in 'Why it works'.", "Explain how it elevates simpler rewards (e.g., merch becomes owners' colours).", "Recommend how to dramatise it (naming, updates, on-pack storytelling)."]}
+      ]
+    },
+    {
+      "id": "L4",
+      "name": "Mechanic Architecture",
+      "summary": "Mechanic must fit job, stay singular, and read in one glance.",
+      "laws": [
+        {"id": "L4.1", "title": "Mechanic fits job", "description": "Value vs fame vs loyalty mechanics chosen deliberately.", "appliesTo": ["evaluate", "create"]},
+        {"id": "L4.2", "title": "One core mechanic", "description": "Avoid mechanic soup; justify each layer.", "appliesTo": ["evaluate", "create"]},
+        {"id": "L4.3", "title": "No mechanic-prize fight", "description": "Call mismatches between mechanic and prize story.", "appliesTo": ["evaluate", "create"]},
+        {"id": "L4.4", "title": "Two-second clarity", "description": "Ensure shoppers grasp gist instantly.", "appliesTo": ["evaluate", "create"]}
+      ]
+    },
+    {
+      "id": "L5",
+      "name": "Prize, Value & Scale",
+      "summary": "Compute EV/% of price, tag ambition zone, distinguish stunts vs promos.",
+      "laws": [
+        {"id": "L5.1", "title": "Compute EV & variance", "description": "Estimate % of price, EV per purchase, variance.", "appliesTo": ["evaluate", "create"]},
+        {"id": "L5.2", "title": "Value bands", "description": "Reference default percentage bands.", "appliesTo": ["evaluate", "create"], "directives": ["Map idea to value zone."]},
+        {"id": "L5.3", "title": "Three ambition zones", "description": "Tag each idea as Zone 1/2/3 and act accordingly.", "appliesTo": ["evaluate", "create"], "directives": ["Kill or justify Zone 3." ]},
+        {"id": "L5.4", "title": "Ambition dial", "description": "Use brief ambition to bias zone selection.", "appliesTo": ["evaluate", "create"]},
+        {"id": "L5.5", "title": "Stunt vs promo", "description": "Call whether idea is scalable promo or PR stunt.", "appliesTo": ["evaluate", "create"]},
+        {"id": "L5.6", "title": "Hero overlay", "description": "If a hero prize/overlay sits on top of a guaranteed value, treat it as its own engine.", "appliesTo": ["evaluate", "create"], "directives": ["State what the hero overlay is and the job it does (premiumise, PR, retailer excitement).", "Explain how it ladders off the base mechanic or whether it fights it.", "Recommend how to dramatise it (naming, comms, retailer sell-in) or whether to kill it."]},
+        {"id": "L5.7", "title": "IP & occasion fit", "description": "When a promo ties to a named IP/event, prizes that let shoppers consume that IP are strong by default.", "appliesTo": ["evaluate", "create"], "directives": ["If tickets/experiences are explicitly for the named IP, state the connection as strong before critiquing value.", "Only flag 'generic prize' if the reward is unspecified (\"any movie\") or the brand has no stated role in the occasion.", "Spell out the brand's role in the occasion (dessert for movie night, drink for match, device for gaming, etc.) or call out the gap.", "StoryBrand must reference this law before labelling an IP promo as weak."]},
+        {"id": "L5.8", "title": "Ticketed cadence", "description": "Ticket pools must be translated into the cadence shoppers feel.", "appliesTo": ["evaluate", "create"], "directives": ["Whenever prize count + timing are known, express cadence (e.g., \"≈1 winner every hour/day/store\") and reuse that phrasing in hooks/verdicts.", "OfferIQ + Shopper must comment on whether cadence feels 'busy' or 'long-shot' and what that means for fairness.", "If cadence is sparse, recommend either richer hero treatment or a guaranteed / mid-tier layer to stop the promo feeling impossible."]},
+        {"id": "L5.9", "title": "Hero vs mass winners", "description": "Decide whether the hero story is a tiny VIP tier or the sheer volume of winners.", "appliesTo": ["evaluate", "create"], "directives": ["If a small VIP/premiere/meet tier exists, treat it as the hero overlay per L5.6 and name the job it does.", "If the power comes from lots of standard tickets, make cadence the hero story (e.g., \"winner every hour\") and state it explicitly.", "StoryBrand must declare which hero is primary and ensure hooks sell it; OfferIQ/Shopper must echo the choice with odds/fairness commentary.", "Retailer must note whether the chosen hero is enough to win display/space against other IP tie-ins."]},
+        {"id": "L5.10", "title": "Cadence framing & rebalancing", "description": "Agents MAY propose cadence or prize-pool reshapes when fairness/story genuinely need it.", "appliesTo": ["evaluate", "create"], "directives": ["Only recommend cadence tweaks (e.g., regroup draws into store hours) when the current felt odds are unclear or underwhelming—otherwise leave the schedule alone.", "If you DO rebalance winners vs value, spell out the new counts/percentage and the fairness/ambition trade-off so humans can sanity-check it.", "When cadence messaging is updated, flag the exact draw window or disclosure needed for T&Cs; if you aren't changing cadence, don't invent new claims.", "StoryBrand should turn cadence shifts into copy ONLY when OfferIQ/Shopper has recommended them; otherwise focus on the natural hero story."]}
+      ]
+    },
+    {
+      "id": "L6",
+      "name": "Retailer & Channel Context",
+      "summary": "Always speak per retailer/channel, eliminate staff friction, feed retailer ego.",
+      "laws": [
+        {"id": "L6.1", "title": "Retailer-specific POV", "description": "Provide fit/objection/tweak per key retailer.", "appliesTo": ["evaluate", "create"]},
+        {"id": "L6.2", "title": "Store-team friction", "description": "Flag and remove manual workload.", "appliesTo": ["evaluate", "create"]},
+        {"id": "L6.3", "title": "Retailer ego", "description": "Exclusive ideas must make retailer look smart/powerful.", "appliesTo": ["evaluate", "create"]},
+        {"id": "L6.4", "title": "Channel reality", "description": "Adjust mechanic for on-prem/off-prem, big box vs indie, etc.", "appliesTo": ["evaluate", "create"]}
+      ]
+    },
+    {
+      "id": "L7",
+      "name": "POS & Communication",
+      "summary": "One thought per surface, hook>value>how, trust cues if scammy.",
+      "laws": [
+        {"id": "L7.1", "title": "One thought per surface", "description": "Each POS element carries one hierarchy.", "appliesTo": ["evaluate", "create"]},
+        {"id": "L7.2", "title": "No hero in fine print", "description": "If best bit hides in T&Cs, flag failure.", "appliesTo": ["evaluate", "create"]},
+        {"id": "L7.3", "title": "Visual hierarchy", "description": "Always output hook, subline, microcopy.", "appliesTo": ["evaluate", "create"]},
+        {"id": "L7.4", "title": "De-risking copy", "description": "Add trust cues, timing statements for sceptical offers.", "appliesTo": ["evaluate", "create"]}
+      ]
+    },
+    {
+      "id": "L8",
+      "name": "Risk, Trust, Compliance & Ethics",
+      "summary": "Trust > short-term volume; flag regulatory hot spots, ethics floor.",
+      "laws": [
+        {"id": "L8.1", "title": "Trust beats short-term", "description": "Kill ideas that erode long-term trust.", "appliesTo": ["evaluate", "create"]},
+        {"id": "L8.2", "title": "Regulatory hotspots", "description": "Call alcohol/finance/kids risks & safer variants.", "appliesTo": ["evaluate", "create"]},
+        {"id": "L8.3", "title": "Complaints & PR risk", "description": "Consider media/social/regulator backlash.", "appliesTo": ["evaluate", "create"]},
+        {"id": "L8.4", "title": "Ethical floor", "description": "Ban ideas encouraging harm/discrimination.", "appliesTo": ["evaluate", "create"]}
+      ]
+    },
+    {
+      "id": "L9",
+      "name": "AI Exploration & Search",
+      "summary": "Use superpowers: divergence, extremes, cross-category theft, mutation, micro-sim.",
+      "laws": [
+        {"id": "L9.1", "title": "Diverge then converge", "description": "Generate 6–12 distinct routes before narrowing.", "appliesTo": ["create"]},
+        {"id": "L9.2", "title": "Law of extremes", "description": "Try low/med/high variants of key variables.", "appliesTo": ["create"]},
+        {"id": "L9.3", "title": "Cross-category theft", "description": "Cite source categories for mechanics.", "appliesTo": ["create"]},
+        {"id": "L9.4", "title": "Idea mutation", "description": "Mutate prize/cadence/entry; recombine routes.", "appliesTo": ["create"]},
+        {"id": "L9.5", "title": "Micro-simulation", "description": "Run scenario walkthroughs for heavy/light users.", "appliesTo": ["evaluate", "create"]}
+      ]
+    },
+    {
+      "id": "L10",
+      "name": "Multi-Agent Debate & Self-Critique",
+      "summary": "Force disagreement, red-team hero ideas, capture dissent.",
+      "laws": [
+        {"id": "L10.1", "title": "Constructive conflict", "description": "Agents must cite laws when disagreeing.", "appliesTo": ["evaluate", "create"]},
+        {"id": "L10.2", "title": "Red-team hero", "description": "Top ideas must be attacked from risk/retailer/shopper angles.", "appliesTo": ["evaluate", "create"]},
+        {"id": "L10.3", "title": "Consensus with dissent", "description": "Final verdict notes material dissent + rationale.", "appliesTo": ["evaluate", "create"]}
+      ]
+    },
+    {
+      "id": "L11",
+      "name": "Learning & Adaptation",
+      "summary": "Remember what worked/failed, maintain hall of fame/shame.",
+      "laws": [
+        {"id": "L11.1", "title": "Remember feedback", "description": "Log verdicts + client reactions for future prompts.", "appliesTo": ["system"]},
+        {"id": "L11.2", "title": "Update exemplars", "description": "Inject real campaign outcomes into prompts.", "appliesTo": ["system"]},
+        {"id": "L11.3", "title": "Hall of fame/shame", "description": "Keep live references to brilliant wins + disasters.", "appliesTo": ["evaluate", "create"]}
+      ]
+    },
+    {
+      "id": "L12",
+      "name": "Output & Explainability",
+      "summary": "Always give verdict, surface logic, stay board-ready.",
+      "laws": [
+        {"id": "L12.1", "title": "Hard verdict", "description": "GO / ITERATE / KILL with top reasons.", "appliesTo": ["evaluate"]},
+        {"id": "L12.2", "title": "Surface logic", "description": "Reference law IDs + ambition zones in output.", "appliesTo": ["evaluate", "create"]},
+        {"id": "L12.3", "title": "Board-ready in a page", "description": "Summaries must be skimmable in 90s.", "appliesTo": ["evaluate", "create"]}
+      ]
+    }
+  ]
+}

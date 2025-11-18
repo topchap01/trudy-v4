@@ -14,6 +14,7 @@ import { writeCampaignMemory } from '../src/lib/memory-store.js'
 import type { ExportOptions } from '../src/export/types.js'
 import { slug } from '../src/export/utils.js'
 import { exportDocxFromSummary } from '../src/docx/exportDocx.js'
+import { proofreadHtml } from '../src/lib/proofreader.js'
 
 const require = createRequire(import.meta.url)
 let pagedCliPath: string | null = null
@@ -50,12 +51,13 @@ async function main() {
   })
 
   const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19)
-  const { html, title, model } = renderExportHtml(snapshot, {
+  let { html, title, model } = renderExportHtml(snapshot, {
     sections: options.sections || {},
     theme: options.theme || {},
     judgeVerdict,
     timestamp,
   })
+  html = await proofreadHtml(html, { scope: 'export', campaignId: snapshot.campaign.id })
 
   if (model.governance.blockers.length) {
     throw new Error(`Export blocked by governance: ${model.governance.blockers.join(', ')}`)

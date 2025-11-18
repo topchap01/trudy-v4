@@ -273,6 +273,7 @@ const [media, setMedia] = useState([])
 
 // Type
 const [typeOfPromotion, setTypeOfPromotion] = useState('INSTANT_WIN')
+const [builderMode, setBuilderMode] = useState(false)
 const [touchedType, setTouchedType] = useState(false) // NEW
 
 // IP / property tie-in
@@ -299,8 +300,12 @@ const [gwpCap, setGwpCap] = useState('')
   const [cashbackCapUnlimited, setCashbackCapUnlimited] = useState(true)
   const [cashbackCap, setCashbackCap] = useState('')
   const [cashbackProofRequired, setCashbackProofRequired] = useState(false)
-  const [cashbackProcessingDays, setCashbackProcessingDays] = useState('') // NEW
-  const [cashbackBands, setCashbackBands] = useState([emptyBand('ABS')]) // for BANDED
+const [cashbackProcessingDays, setCashbackProcessingDays] = useState('') // NEW
+const [cashbackAssured, setCashbackAssured] = useState(true)
+const [cashbackOdds, setCashbackOdds] = useState('')
+const [cashbackBasePayout, setCashbackBasePayout] = useState('')
+const [cashbackTopPayout, setCashbackTopPayout] = useState('')
+const [cashbackBands, setCashbackBands] = useState([emptyBand('ABS')]) // for BANDED
 
   // Other promo types
   const [mbgTimeframeDays, setMbgTimeframeDays] = useState('')
@@ -359,6 +364,7 @@ const [avgPrice, setAvgPrice] = useState('') // average selling price anchor
 const [expectedBuyers, setExpectedBuyers] = useState('')
 const [totalWinnersEst, setTotalWinnersEst] = useState('')
 const [breadthPrizeCount, setBreadthPrizeCount] = useState('')
+const [prizePoolValue, setPrizePoolValue] = useState('')
 const [claimFieldsCount, setClaimFieldsCount] = useState('')
 const [screens, setScreens] = useState('')
 const [appOnly, setAppOnly] = useState(false)
@@ -394,6 +400,7 @@ const hydrateFromData = useCallback((spec = {}, campaignRow = {}, rawText = '') 
   setHeroPrize(spec.heroPrize || '')
   setHeroPrizeCount(spec.heroPrizeCount != null ? String(spec.heroPrizeCount) : '')
   setRunnerUps(toCSV(spec.runnerUps))
+  setPrizePoolValue(spec.prizePoolValue != null ? String(spec.prizePoolValue) : '')
 
   setRegulatedCategory(Boolean(spec.regulatedCategory))
   setAgeGate(Boolean(spec.ageGate))
@@ -401,7 +408,14 @@ const hydrateFromData = useCallback((spec = {}, campaignRow = {}, rawText = '') 
 
   setMedia(Array.isArray(spec.media) ? spec.media : [])
 
-  setTypeOfPromotion(spec.typeOfPromotion || 'INSTANT_WIN')
+  const incomingType = typeof spec.typeOfPromotion === 'string' ? spec.typeOfPromotion.trim() : ''
+  if (incomingType) {
+    setTypeOfPromotion(incomingType)
+    setBuilderMode(false)
+  } else {
+    setTypeOfPromotion('')
+    setBuilderMode(true)
+  }
   setTouchedType(false)
 
   const ip =
@@ -438,6 +452,10 @@ const hydrateFromData = useCallback((spec = {}, campaignRow = {}, rawText = '') 
   setCashbackCap(cashback && cashback.cap !== 'UNLIMITED' && cashback.cap != null ? String(cashback.cap) : '')
   setCashbackProofRequired(Boolean(cashback.proofRequired))
   setCashbackProcessingDays(cashback.processingDays != null ? String(cashback.processingDays) : '')
+  setCashbackAssured(cashback.assured !== false)
+  setCashbackOdds(cashback.odds || '')
+  setCashbackBasePayout(cashback.basePayout != null ? String(cashback.basePayout) : '')
+  setCashbackTopPayout(cashback.topPayout != null ? String(cashback.topPayout) : '')
   setCashbackBands(normaliseCashbackBandsForForm(cashback.bands))
 
   setMbgTimeframeDays(spec.moneyBackGuarantee?.timeframeDays != null ? String(spec.moneyBackGuarantee.timeframeDays) : '')
@@ -524,6 +542,7 @@ const hydrateFromData = useCallback((spec = {}, campaignRow = {}, rawText = '') 
   setThemedEvent,
   setMedia,
   setTypeOfPromotion,
+  setBuilderMode,
   setTouchedType,
   setIpEnabled,
   setIpFranchise,
@@ -618,6 +637,17 @@ useEffect(() => {
   load()
   return () => { cancelled = true }
 }, [id, isEditing, hydrateFromData])
+
+useEffect(() => {
+  if (builderMode) {
+    setTypeOfPromotion('')
+    setTouchedType(false)
+  } else if (!typeOfPromotion) {
+    setTypeOfPromotion('INSTANT_WIN')
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [builderMode])
+
 const heroCountNumber = hasHeroPrizes ? numOrNull(heroPrizeCount) : null
 const breadthCountNumber = numOrNull(breadthPrizeCount)
 const autoTotalRaw = (heroCountNumber ?? 0) + (breadthCountNumber ?? 0)
@@ -677,6 +707,10 @@ function toggleMedia(name) {
           proofRequired: !!cashbackProofRequired,
           processingDays: cashbackProcessingDays ? Number(cashbackProcessingDays) : null,
           mode: cashbackMode,
+          assured: !!cashbackAssured,
+          odds: cashbackOdds.trim() ? cashbackOdds.trim() : null,
+          basePayout: cashbackBasePayout ? Number(cashbackBasePayout) : null,
+          topPayout: cashbackTopPayout ? Number(cashbackTopPayout) : null,
         }
         if (cashbackMode === 'FLAT') {
           return { cashback: { ...base, amount: cashbackAmount ? Number(cashbackAmount) : null } }
@@ -722,6 +756,7 @@ function toggleMedia(name) {
     const overrideTotal = numOrNull(totalWinnersEst)
     const computedTotal = (heroCount ?? 0) + (breadthCount ?? 0)
     const totalWinnersValue = overrideTotal != null ? overrideTotal : (computedTotal > 0 ? computedTotal : null)
+    const prizePoolNumber = numOrNull(prizePoolValue)
     const assuredFlag = rewardPosture === 'ASSURED' || rewardPosture === 'HYBRID'
     const activationList = Array.from(new Set(activationChannels)).filter(Boolean)
     const retailerTagList = Array.from(new Set(retailerTags)).filter(Boolean)
@@ -755,7 +790,7 @@ function toggleMedia(name) {
       heroPrizeCount: heroPrizeEnabled ? heroCount : null,
       runnerUps: csv(runnerUps),
 
-      typeOfPromotion,
+      typeOfPromotion: builderMode ? '' : typeOfPromotion,
 
       regulatedCategory: !!regulatedCategory,
       ageGate: !!ageGate,
@@ -811,6 +846,7 @@ function toggleMedia(name) {
       expectedBuyers: numOrNull(expectedBuyers),
       breadthPrizeCount: breadthCount,
       totalWinners: totalWinnersValue,
+      prizePoolValue: prizePoolNumber,
       claimFieldsCount: numOrNull(claimFieldsCount),
       screens: numOrNull(screens),
       appOnly: !!appOnly,
@@ -974,14 +1010,39 @@ function toggleMedia(name) {
       <Panel title="Value & Type">
         <div className="grid md:grid-cols-2 gap-3">
           <L label="Primary type">
-            <select
-              className="w-full border rounded p-2"
-              value={typeOfPromotion}
-              onChange={e => { setTypeOfPromotion(e.target.value); setTouchedType(true) }}
-            >
-              {PROMO_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
+            <div className="space-y-2">
+              <select
+                className={`w-full border rounded p-2 ${builderMode ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''}`}
+                value={builderMode ? '' : typeOfPromotion}
+                onChange={e => {
+                  if (builderMode) return
+                  setTypeOfPromotion(e.target.value)
+                  setTouchedType(true)
+                }}
+                disabled={builderMode}
+              >
+                {PROMO_TYPES.map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+              {builderMode ? (
+                <p className="text-xs text-gray-500">Promo Builder will set the promotion type once you save an idea.</p>
+              ) : (
+                <p className="text-xs text-gray-500">Pick the closest route now, or toggle “Builder-first” below to decide later.</p>
+              )}
+            </div>
           </L>
+          <div className="md:col-span-2">
+            <label className="inline-flex items-center gap-2 text-xs text-gray-700">
+              <input
+                type="checkbox"
+                className="rounded border-gray-300"
+                checked={builderMode}
+                onChange={(e) => setBuilderMode(e.target.checked)}
+              />
+              <span>Builder-first: I’ll define mechanic/type later inside Promo Builder.</span>
+            </label>
+          </div>
           <div className="md:col-span-2">
             <L label="Reward posture">
               <div className="flex flex-col gap-2 text-sm">
@@ -1019,6 +1080,29 @@ function toggleMedia(name) {
               <L label="Currency"><input className="w-full border rounded p-2" value={cashbackCurrency} onChange={e=>setCashbackCurrency(e.target.value)} placeholder="AUD" /></L>
               <L label="Processing time (days)"><input className="w-full border rounded p-2" type="number" min="0" value={cashbackProcessingDays} onChange={e=>setCashbackProcessingDays(e.target.value)} placeholder="e.g., 7" /></L>
             </div>
+            <div className="grid md:grid-cols-2 gap-3">
+              <L label="Guaranteed for every eligible claimant?">
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={cashbackAssured} onChange={e=>setCashbackAssured(e.target.checked)} />
+                  <span className="text-sm">Untick if this is an odds-based cashback (e.g., 1-in-3 wins).</span>
+                </label>
+              </L>
+              {!cashbackAssured && (
+                <L label="Odds / cadence copy">
+                  <input className="w-full border rounded p-2" value={cashbackOdds} onChange={e=>setCashbackOdds(e.target.value)} placeholder="e.g., 1-in-3 wins $300; others $0" />
+                </L>
+              )}
+            </div>
+            {!cashbackAssured && (
+              <div className="grid md:grid-cols-2 gap-3">
+                <L label="Top payout ($)">
+                  <input className="w-full border rounded p-2" type="number" min="0" value={cashbackTopPayout} onChange={e=>setCashbackTopPayout(e.target.value)} placeholder="e.g., 300" />
+                </L>
+                <L label="Base payout ($, optional)">
+                  <input className="w-full border rounded p-2" type="number" min="0" value={cashbackBasePayout} onChange={e=>setCashbackBasePayout(e.target.value)} placeholder="e.g., 100 or 0" />
+                </L>
+              </div>
+            )}
 
             {cashbackMode === 'FLAT' && (
               <div className="grid md:grid-cols-3 gap-3">
@@ -1118,7 +1202,7 @@ function toggleMedia(name) {
       </Panel>
 
       <Panel title="Winners & Cadence">
-        <div className="grid md:grid-cols-3 gap-3">
+        <div className="grid md:grid-cols-4 gap-3">
           <L label="Runner-up / secondary prizes (comma)">
             <input
               className="w-full border rounded p-2"
@@ -1151,6 +1235,17 @@ function toggleMedia(name) {
                 {autoTotalDisplay ? `Auto total from hero (${heroCountNumber ?? 0}) + breadth (${breadthCountNumber ?? 0}) = ${autoTotalDisplay}` : 'Auto total will populate once hero/breadth counts are set.'}
               </div>
             </div>
+          </L>
+          <L label="Prize pool value ($ retail)">
+            <input
+              className="w-full border rounded p-2"
+              type="number"
+              min="0"
+              value={prizePoolValue}
+              onChange={e=>setPrizePoolValue(e.target.value)}
+              placeholder="e.g., 40000"
+            />
+            <div className="text-xs text-gray-500 mt-1">Needed for permits & OfferIQ budget checks.</div>
           </L>
         </div>
       </Panel>

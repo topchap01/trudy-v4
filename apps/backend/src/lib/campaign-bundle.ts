@@ -18,6 +18,11 @@ export type CampaignBundle = {
 
 export async function buildCampaignBundle(campaignId: string): Promise<CampaignBundle> {
   const snapshot = await collectExportSnapshot(campaignId, {})
+  const sparkSeed = (snapshot as any).spark
+  if (sparkSeed) {
+    snapshot.context.briefSpec = snapshot.context.briefSpec || {}
+    snapshot.context.briefSpec.__spark = sparkSeed
+  }
   const rules = await loadCampaignRules(snapshot.context)
 
   const outputsRaw = await prisma.output.findMany({

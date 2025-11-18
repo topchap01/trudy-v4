@@ -21,6 +21,13 @@ export type OfferIQ = {
   hardFlags: string[]
   recommendations: string[]
   asks: string[]
+  heroOverlay?: {
+    label: string
+    valueHint?: string
+    count?: number
+    narrative?: string
+  }
+  storyNotes?: string[]
   mode: 'ASSURED' | 'PRIZE'
   diagnostics: {
     valueAmount?: number              // representative amount at ASP
@@ -189,10 +196,12 @@ function extract(ctx: CampaignContext) {
   const { banded, representative: repAmount, headlineMax } = deriveCashbackValue(cashback, asp)
 
   // Assured flag
-  const assured =
-    type === 'CASHBACK' ||
-    !!cashback ||
+  const cashbackAssured =
+    (type === 'CASHBACK' && (cashback ? cashback.assured !== false : true)) ||
+    Boolean(cashback && cashback.assured !== false)
+  const gwpAssured =
     ((type === 'GWP' || !!gwp) && (gwp?.cap === 'UNLIMITED' || gwp?.cap == null))
+  const assured = cashbackAssured || gwpAssured
 
   // GWP proxy value
   const gwpRrp = gwp ? asNum(gwp.rrp || gwp.value || gwp.estimatedValue) : 0
@@ -487,13 +496,13 @@ export function scoreOffer(ctx: CampaignContext): OfferIQ {
         ? 'Experiential overlay (e.g., Private Chef) is inherently talkable; use it as the story.'
         : overlay
           ? 'Overlay adds a headline moment.'
-          : (hasSymbolic ? 'Cultural/status angle present.' : (seasonal ? 'Seasonal hook helps.' : 'Little social currency.')),
+          : (hasSymbolic ? 'Cultural/status angle present; dramatise the myth and bridge story.' : (seasonal ? 'Seasonal hook helps.' : 'Little social currency.')),
     fix:
       overlay && overlayExperiential
         ? 'Let the overlay carry PR and mood; keep cashback as the headline value line.'
         : overlay
           ? 'Let the overlay add fame without overshadowing the guaranteed value.'
-          : (hasSymbolic ? 'Lean into the ritual/status moments.' : 'Add a brand-right experiential or symbolic angle.'),
+          : (hasSymbolic ? 'Bring the symbolic reward to life (naming, live updates, owners’ colours). Place it at the heart of comms.' : 'Add a brand-right experiential or symbolic angle.'),
   }
 
   const zeroLift = includesAny(JSON.stringify(b || {}), ['zero staff', 'central fulfilment', 'centralized fulfillment', 'pre-packed pos', 'prepacked pos'])
@@ -589,6 +598,15 @@ export function scoreOffer(ctx: CampaignContext): OfferIQ {
     hardFlags,
     recommendations,
     asks,
+    heroOverlay: overlay || b.heroPrize
+      ? {
+          label: (typeof b.majorPrizeOverlay === 'string' ? b.majorPrizeOverlay : b.heroPrize || ''),
+          valueHint: b.heroPrizeValue || (overlayExperiential ? 'Experiential' : undefined),
+          count: heroCount || undefined,
+          narrative: overlayExperiential ? 'Premium/experience overlay intended to add PR heat.' : undefined
+        }
+      : undefined,
+    storyNotes: symbolicSignals ? ['If there is a symbolic or bridge reward, dramatise it with naming and storytelling so shoppers grasp why it matters.'] : undefined,
     mode,
     diagnostics: {
       valueAmount: repAmount,

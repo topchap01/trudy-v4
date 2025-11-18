@@ -4,7 +4,7 @@ import { normaliseMarketCode } from './campaign-rules.js'
 import { prisma } from '../db/prisma.js'
 import { resolveModel } from './models.js'
 import { chat } from './openai.js' // used only when RESEARCH_USE_LLM=1
-import { logLlmInsight } from './knowledge-grid.js'
+import { logLlmInsight, getBrandDossierHints } from './knowledge-grid.js'
 
 export type ResearchLevel = 'LITE' | 'DEEP' | 'MAX'
 
@@ -848,8 +848,11 @@ function classifyLiquorSubcategory(ctx: CampaignContext): LiquorSub {
 function isAssuredValue(ctx: CampaignContext): boolean {
   const t = String((ctx.briefSpec as any)?.typeOfPromotion || '').toUpperCase()
   const gwp = !!(ctx.briefSpec as any)?.gwp
-  const cashback = !!(ctx.briefSpec as any)?.cashback
-  return t === 'CASHBACK' || t === 'GWP' || gwp || cashback
+  const cashback = (ctx.briefSpec as any)?.cashback || null
+  const cashbackAssured =
+    (t === 'CASHBACK' && (cashback ? cashback.assured !== false : true)) ||
+    Boolean(cashback && cashback.assured !== false)
+  return t === 'GWP' || gwp || cashbackAssured
 }
 
 /* -------------------------------- helpers --------------------------------- */
@@ -1182,6 +1185,35 @@ function selectInsightEntries(
     if (picked.length >= cap) break
   }
   return picked
+}
+
+type DossierKey = keyof ResearchDossier
+const DOSSIER_CAPS: Record<DossierKey, number> = {
+  brandTruths: 5,
+  shopperTensions: 5,
+  retailerReality: 4,
+  competitorMoves: 4,
+  categorySignals: 4,
+  benchmarks: 3,
+}
+
+function applyBrandKnowledgeToDossier(
+  base: ResearchDossier,
+  hints?: Partial<Record<DossierKey, ResearchInsightEntry[]>> | null
+): ResearchDossier {
+  if (!hints) return base
+  let mutated = false
+  const next: ResearchDossier = { ...base }
+  for (const key of Object.keys(DOSSIER_CAPS) as DossierKey[]) {
+    const extra = hints[key]
+    if (!extra?.length) continue
+    const current = (next as any)[key] as ResearchInsightEntry[] | undefined
+    const merged = mergeInsightPools(extra, current || [])
+    const cap = DOSSIER_CAPS[key] || extra.length
+    ;(next as any)[key] = merged.slice(0, cap)
+    mutated = true
+  }
+  return mutated ? next : base
 }
 
 function sanitizeInsightArray(raw: any, cap = 4): ResearchInsightEntry[] {
@@ -2367,8 +2399,13 @@ function buildShopperTensionQueries(opts: {
     pack.insights = insights
     const marketCode = normaliseMarketCode(String(ctx.market || marketLabel))
     const baseDossier = buildResearchDossier(pack, marketCode, { onPremise, personaKeywords: personaKeywordTokens })
-    const editorialDossier = await editorializeDossier(ctx, pack, baseDossier, { logs })
-    pack.dossier = editorialDossier || baseDossier
+    const brandHints = await getBrandDossierHints(ctx.briefSpec?.brand, ctx.market)
+    const dossierWithBrand = applyBrandKnowledgeToDossier(baseDossier, brandHints)
+    const editorialDossier = await editorializeDossier(ctx, pack, dossierWithBrand, { logs })
+    const finalDossier = editorialDossier
+      ? applyBrandKnowledgeToDossier(editorialDossier, brandHints)
+      : dossierWithBrand
+    pack.dossier = finalDossier
 
     /* ---- Competitor promotions discovery ---- */
     const qSeeds: string[] = []

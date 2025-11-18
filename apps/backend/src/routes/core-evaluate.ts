@@ -7,6 +7,30 @@ import { runIdeation } from '../lib/orchestrator/ideation.js'
 import { extractFramingMeta } from '../lib/orchestrator/framing.js'
 import { readWarRoomPrefsFromBrief, saveWarRoomPrefs } from '../lib/war-room-prefs.js'
 import { applyResearchOverrides, readResearchOverridesFromBrief, saveResearchOverrides } from '../lib/war-room-research.js'
+import { readVariantsFromBrief, saveVariants, findVariant } from '../lib/war-room-variants.js'
+import type { WarRoomVariant } from '../lib/war-room-variants.js'
+import { chat } from '../lib/openai.js'
+
+function mergeDeep<T>(base: any, patch: any): T {
+  if (patch === null) return null as T
+  if (patch === undefined) return base
+  if (Array.isArray(patch)) return patch as T
+  if (typeof patch !== 'object') return patch as T
+  const out: any = { ...(base && typeof base === 'object' ? base : {}) }
+  for (const k of Object.keys(patch)) {
+    const pv = (patch as any)[k]
+    const bv = out[k]
+    if (pv === null) { out[k] = null; continue }
+    if (pv === undefined) { continue }
+    if (Array.isArray(pv)) { out[k] = pv; continue }
+    if (typeof pv === 'object') {
+      out[k] = mergeDeep(bv, pv)
+    } else {
+      out[k] = pv
+    }
+  }
+  return out
+}
 
 const router = Router()
 
@@ -237,27 +261,6 @@ router.put('/campaigns/:id/brief', async (req: Request, res: Response, next: Nex
 
     if (typeof parsedJson === 'string') {
       try { parsedJson = JSON.parse(parsedJson) } catch { /* leave as-is */ }
-    }
-
-    function mergeDeep<T>(base: any, patch: any): T {
-      if (patch === null) return null as T
-      if (patch === undefined) return base
-      if (Array.isArray(patch)) return patch as T
-      if (typeof patch !== 'object') return patch as T
-      const out: any = { ...(base && typeof base === 'object' ? base : {}) }
-      for (const k of Object.keys(patch)) {
-        const pv = (patch as any)[k]
-        const bv = out[k]
-        if (pv === null) { out[k] = null; continue }
-        if (pv === undefined) { continue }
-        if (Array.isArray(pv)) { out[k] = pv; continue }
-        if (typeof pv === 'object') {
-          out[k] = mergeDeep(bv, pv)
-        } else {
-          out[k] = pv
-        }
-      }
-      return out
     }
 
     const existingParsed = camp.brief?.parsedJson ?? {}
@@ -548,6 +551,79 @@ router.post('/campaigns/:id/war-room/research/overrides', async (req: Request, r
   } catch (err) { next(err) }
 })
 
+router.get('/campaigns/:id/variants', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const camp = await prisma.campaign.findUnique({
+      where: { id: req.params.id },
+      include: { brief: true },
+    })
+    if (!camp) return res.status(404).json({ error: 'Campaign not found' })
+    const variants = readVariantsFromBrief(camp.brief)
+    res.json({ variants })
+  } catch (err) {
+    next(err)
+  }
+})
+
+router.post('/campaigns/:id/variants', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = req.params.id
+    const variants = Array.isArray(req.body?.variants) ? req.body.variants : []
+    const saved = await saveVariants(id, variants, { spark: req.body?.spark })
+    res.json({ variants: saved })
+  } catch (err) {
+    next(err)
+  }
+})
+
+router.post('/campaigns/:id/variants/draft', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params
+    const instructions = typeof req.body?.instructions === 'string' ? req.body.instructions.trim() : ''
+    if (!instructions) {
+      return res.status(400).json({ error: 'Instructions are required.' })
+    }
+    const camp = await prisma.campaign.findUnique({
+      where: { id },
+      include: { brief: true },
+    })
+    if (!camp) return res.status(404).json({ error: 'Campaign not found' })
+    const spec = camp.brief?.parsedJson ?? {}
+    const snapshot = JSON.stringify(spec, null, 2)
+    const systemPrompt = 'You are VariantAssist, a JSON-only assistant. Merge the user instruction with the provided baseline brief. Return ONLY valid, minified JSON containing the fields that should override the baseline.'
+    const userPrompt = [
+      'Baseline brief JSON:',
+      snapshot.slice(0, 12000),
+      '',
+      'Instruction:',
+      instructions,
+      '',
+      'Respond with JSON only.',
+    ].join('\n')
+    const reply: any = await chat({
+      model: process.env.MODEL_VARIANT || process.env.MODEL_DEFAULT || 'gpt-4o-mini',
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userPrompt }],
+      temperature: 0,
+      top_p: 1,
+      max_output_tokens: 600,
+      meta: { scope: 'variants.draft', campaignId: id },
+    })
+    const draftText = typeof reply === 'string' ? reply : String(reply?.content ?? reply)
+    let overrides = {}
+    try {
+      overrides = JSON.parse(draftText)
+      if (!overrides || typeof overrides !== 'object') throw new Error('Invalid JSON')
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err)
+      return res.status(422).json({ error: 'Variant draft must be valid JSON.', detail, raw: draftText })
+    }
+    res.json({ overrides })
+  } catch (err) {
+    next(err)
+  }
+})
+
 /* -------------------------------------------------------------------------- */
 /*   run ideation (UNBOXED + HARNESS)                                         */
 /* -------------------------------------------------------------------------- */
@@ -671,6 +747,77 @@ router.post('/campaigns/:id/evaluate/run', async (req: Request, res: Response, n
     })
 
     res.json(saved)
+  } catch (err) {
+    next(err)
+  }
+})
+
+router.post('/campaigns/:id/variants/:variantId/evaluate', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id, variantId } = req.params
+    const camp = await prisma.campaign.findUnique({
+      where: { id },
+      include: { brief: true },
+    })
+    if (!camp) return res.status(404).json({ error: 'Campaign not found' })
+
+    const variantList = readVariantsFromBrief(camp.brief)
+    const variant = findVariant(variantList, variantId)
+    if (!variant) return res.status(404).json({ error: 'Variant not found' })
+
+    const framingRows = await fetchByTypesAsc(id, ['framingNarrative', 'framing'])
+    const latestFraming = framingRows.length ? framingRows[framingRows.length - 1] : null
+    if (!latestFraming) {
+      return res.status(409).json({ error: 'FRAMING_REQUIRED' })
+    }
+    const priorFraming = (latestFraming?.content || '').trim()
+    const priorFramingMeta = latestFraming ? extractFramingMeta(latestFraming) : null
+
+    const baseParsed = camp.brief?.parsedJson ?? {}
+    const mergedParsed = mergeDeep<any>(baseParsed, variant.overrides || {})
+    const fallbackRaw = camp.brief?.rawText ?? ''
+    const fallbackAssets = camp.brief?.assets ?? {}
+    const variantBrief = camp.brief
+      ? { ...camp.brief, parsedJson: mergedParsed }
+      : {
+          campaignId: camp.id,
+          rawText: fallbackRaw,
+          parsedJson: mergedParsed,
+          assets: fallbackAssets,
+        }
+    const variantCamp: typeof camp = {
+      ...camp,
+      brief: variantBrief,
+    }
+
+    const variantCtx = buildCampaignContext(variantCamp)
+    const researchOverrides = readResearchOverridesFromBrief(camp.brief)
+    const ruleFlex = guardEnum((req.body?.ruleFlex as any) ?? 'KEEP', RULE_FLEX_ENUM, 'KEEP')
+
+    const { content, meta } = await runEvaluate(variantCtx, {
+      ruleFlex,
+      priorFraming,
+      priorFramingMeta,
+      researchOverrides,
+    })
+
+    const saved = await prisma.output.create({
+      data: {
+        campaign: { connect: { id } },
+        type: 'evaluationVariant',
+        content,
+        params: {
+          ...(meta || {}),
+          codeVersion: 'v4-eval-variant',
+          kind: 'eval-variant',
+          variantId: variant.id,
+          variantName: variant.name,
+        } as any,
+      },
+      select: { id: true, type: true, content: true, params: true, createdAt: true },
+    })
+
+    res.json({ result: saved })
   } catch (err) {
     next(err)
   }

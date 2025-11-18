@@ -8,6 +8,7 @@ import { polishText } from '../polish.js'
 import { prisma } from '../../db/prisma.js'
 import { buildCampaignStyleSpec, pickStructure, enforceLexicon, stripAvoided } from '../style-spec.js'
 import type { ResearchPack } from '../research.js'
+import { proofreadProse } from '../proofreader.js'
 
 type SynthesisInputs = {
   framing: string
@@ -110,13 +111,15 @@ export async function runSynthesis(ctx: CampaignContext, inputs: SynthesisInputs
   const retailerLine = retailers.length ? retailers.slice(0, 6).join(', ') : 'n/a'
 
   const promotionType = rules.promotionType
+  const cashbackSpec = spec.cashback || null
+  const cashbackGuaranteed = Boolean(cashbackSpec && cashbackSpec.assured !== false)
   const assuredItemsList = Array.isArray(spec.assuredItems)
     ? spec.assuredItems.map((item: any) => String(item || '').trim()).filter(Boolean)
     : (typeof spec.assuredItems === 'string'
         ? String(spec.assuredItems).split(/[,•\n]+/).map((item) => item.trim()).filter(Boolean)
         : [])
   const assuredValue = Boolean(
-    spec.cashback ||
+    cashbackGuaranteed ||
     spec.gwp ||
     spec.assuredValue ||
     assuredItemsList.length > 0
@@ -177,15 +180,15 @@ export async function runSynthesis(ctx: CampaignContext, inputs: SynthesisInputs
   if (totalWinners != null) contextLines.push(`Total winners (brief): ${totalWinners}${winnersPerDay ? ` (~${winnersPerDay.toFixed(1)} per day)` : ''}`)
   if (assuredValue) {
     const cbPercent =
-      spec.cashback && typeof (spec.cashback as any).percent === 'number' && !Number.isNaN((spec.cashback as any).percent)
-        ? Number((spec.cashback as any).percent)
+      cashbackSpec && typeof (cashbackSpec as any).percent === 'number' && !Number.isNaN((cashbackSpec as any).percent)
+        ? Number((cashbackSpec as any).percent)
         : null
-    const descriptor = spec.cashback
-      ? (spec.cashback.amount != null
-          ? `$${spec.cashback.amount} cashback`
+    const descriptor = cashbackGuaranteed && cashbackSpec
+      ? (cashbackSpec.amount != null
+          ? `$${cashbackSpec.amount} cashback`
           : (cbPercent != null
               ? `${cbPercent}% cashback`
-              : (Array.isArray(spec.cashback.bands) && spec.cashback.bands.length ? 'banded cashback' : 'cashback guarantee')))
+              : (Array.isArray(cashbackSpec.bands) && cashbackSpec.bands.length ? 'banded cashback' : 'cashback guarantee')))
       : assuredItemsList.length
         ? assuredItemsList.slice(0, 3).join(', ')
         : 'guaranteed reward'
@@ -228,6 +231,7 @@ export async function runSynthesis(ctx: CampaignContext, inputs: SynthesisInputs
   if (rules.founder.notes.length) {
     contextLines.push(...rules.founder.notes.map((note) => `Founder guidance: ${note}`))
   }
+  const limitedContext = Array.from(new Set(contextLines.filter(Boolean))).slice(0, 16)
 
   const opsGuards: string[] = []
   if (rules.guardrails.allStockists) {
@@ -271,8 +275,8 @@ export async function runSynthesis(ctx: CampaignContext, inputs: SynthesisInputs
   ].filter(Boolean).join('\n')
 
   const prompt = `You are the Synthesis lead. You own the final narrative that goes to the client.\n\n` +
-    'CONTEXT:\n' + contextLines.map((line) => `- ${line}`).join('\n') + '\n' +
-    (opsGuards.length ? `Operational guardrails:\n${opsGuards.map((line) => `- ${line}`).join('\n')}\n` : '') +
+    'CONTEXT:\n' + limitedContext.map((line) => `- ${line}`).join('\n') + '\n' +
+    (opsGuards.length ? `Operational guardrails:\n${opsGuards.slice(0, 6).map((line) => `- ${line}`).join('\n')}\n` : '') +
     `Brief snapshot: ${briefSnapshot.replace(/\s+/g, ' ').slice(0, 360)}\n\n` +
     (framingNote ? `Framing memory: ${framingNote}\n` : '') +
     (strategistNote ? `Strategist scenarios: ${strategistNote}\n` : '') +
@@ -281,13 +285,11 @@ export async function runSynthesis(ctx: CampaignContext, inputs: SynthesisInputs
     (ideasNote ? `Ideas flavour: ${ideasNote}\n` : '') +
     (researchHighlights.length ? `Research highlights: ${researchHighlights.join(' | ')}\n\n` : '\n') +
     `${toneBlock}\n` +
-    'Write a 650–800 word synthesis memo. No bullet points, no markdown headings, no emoji. Let the argument flow in paragraphs.\n' +
-    'Structure naturally as you would present to a CMO: open with a clear verdict, ground it in the insights, walk through the improvement plan (value, cadence, prize, hook), reassure the retailer/trade case, then close with Tighten vs Stretch and the measurement plan.\n' +
-    'Use the actual numbers supplied (winners, cadence, OfferIQ scores, benchmarks). If you reference Strategist moves, articulate why they win.\n' +
-    'Do not recommend staff-run amplification, in-store kiosks, or terminals; assume store labour tolerance is zero unless the brief says otherwise.\n' +
-    'Explicitly describe the recommended plan (what changes, why it works, what it costs, and how we measure it).\n' +
-    'Conclude with a final paragraph starting “Measurement — …” naming the single metric we monitor first.\n' +
-    'After that, add two standalone lines: Pack line in quotes, then Staff line in quotes. Keep both brand-locked and under six words.\n' +
+    'Write a ~550 word synthesis memo. No bullet points, no markdown headings, no emoji. Keep paragraphs ≤4 sentences.\n' +
+    'Structure: (1) Verdict & why now. (2) Improvement plan (value, cadence, prize, hook). (3) Retailer/trade reality + ops. (4) Tighten vs Stretch. (5) Measurement paragraph starting “Measurement — …”.\n' +
+    'Use the actual numbers supplied (winners, cadence, OfferIQ scores, benchmarks). If you cite Strategist moves, articulate why they win.\n' +
+    'Do not recommend staff-run amplification, kiosks, or terminals; assume store labour tolerance is zero unless the brief says otherwise.\n' +
+    'After the measurement paragraph, add two standalone lines: Pack line in quotes, then Staff line in quotes (each ≤6 words, brand-locked).\n' +
     'Tone: elegant, authoritative, commercially ruthless. Cite sources inline when mentioning data (e.g., “Source: insidefmcg.com.au”).'
 
   const systemMessage = [
@@ -310,5 +312,6 @@ export async function runSynthesis(ctx: CampaignContext, inputs: SynthesisInputs
   let cleaned = polishText(narrative.trim(), { locale: 'en-AU' })
   cleaned = stripAvoided(cleaned, style)
   cleaned = enforceLexicon(cleaned, style)
+  cleaned = await proofreadProse(cleaned, { scope: 'synthesis', campaignId: ctx.id, medium: 'markdown' })
   return cleaned
 }

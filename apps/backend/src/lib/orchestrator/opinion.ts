@@ -457,7 +457,8 @@ export async function runOpinion(
   const type = String(spec?.typeOfPromotion || '').toUpperCase()
   const gwp = spec?.gwp || null
   const cashback = spec?.cashback || null
-  const assuredViaCashback = !!(type === 'CASHBACK' || cashback)
+  const hasCashback = Boolean(type === 'CASHBACK' || cashback)
+  const assuredViaCashback = hasCashback && Boolean(!cashback || cashback.assured !== false)
   const assuredViaGWP = !!(type === 'GWP' || gwp) && (gwp?.cap === 'UNLIMITED' || gwp?.cap == null)
   const isAssuredValue = !!(assuredViaCashback || assuredViaGWP)
 
@@ -535,7 +536,7 @@ export async function runOpinion(
     'Do NOT mention ease/simplicity/hassle unless MAJOR_FRICTION=true.',
     // Prize-shape push (conditional)
     (isPrizeLed(spec) && !forbidHeroPrize && !breadthOnly
-      ? 'If PROMO_TYPE=PRIZE and a hero prize is in scope, include explicit go-calls to set hero_prize_count to a tight number (2–3), convert second-tier prizes to instant wins, and refresh the hook (2–6 words, brand-locked). Do not mention cashback/GWP.'
+      ? 'If PROMO_TYPE=PRIZE and a hero prize is in scope, include explicit go-calls to set hero_prize_count to a tight number (2–3), convert second-tier prizes to instant wins, and refresh the hook with a tight, brand-locked line. Do not mention cashback/GWP.'
       : 'If PROMO_TYPE=PRIZE and hero is out-of-scope or breadth-only, do NOT invent a hero prize. Focus calls on visible cadence/breadth, optional pairing of single-admit rewards, and leading with total winners if large.'),
     // IP rule
     'If an IP tie-in exists (e.g., movie launch), include a hook alternative aligned to the IP theme and respect any partner/window guardrails; do not fabricate licensing claims.',
@@ -591,7 +592,7 @@ export async function runOpinion(
       calls: { go: ['string'], no_go: ['string'] },
       risks: ['string'],
       retailer_incentives: ['string'],
-      hook_alternatives: ['2–6 words']
+      hook_alternatives: ['short premium line']
     }),
     '',
     'Caps: go ≤5, no_go ≤5, risks ≤6, retailer_incentives ≤6, hook_alternatives ≤8.'

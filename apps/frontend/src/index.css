@@ -52,3 +52,127 @@
 .btn--primary { @apply bg-sky-600 hover:bg-sky-700; }
 .btn--busy { @apply bg-sky-300 cursor-not-allowed; }
 
+.builder-confetti-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 20;
+}
+.builder-confetti-piece {
+  position: absolute;
+  width: 4px;
+  height: 12px;
+  border-radius: 999px;
+  opacity: 0;
+  animation: builder-confetti-fall 1s ease-out forwards;
+}
+@keyframes builder-confetti-fall {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  10% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(var(--drift, 40px), var(--distance, 120px), 0) rotate(540deg);
+  }
+}
+
+.spark-panel {
+  @apply relative overflow-hidden rounded-2xl border shadow-sm px-5 py-4;
+  background: linear-gradient(135deg, rgba(13, 148, 136, 0.08), rgba(59, 130, 246, 0.08), rgba(234, 179, 8, 0.12));
+}
+.spark-panel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 15% 20%, rgba(16, 185, 129, 0.25), transparent 45%),
+              radial-gradient(circle at 85% 0%, rgba(59, 130, 246, 0.2), transparent 40%),
+              radial-gradient(circle at 50% 120%, rgba(234, 179, 8, 0.25), transparent 50%);
+  opacity: 0.7;
+  animation: sparkGlow 8s ease-in-out infinite alternate;
+}
+.spark-panel > * {
+  position: relative;
+  z-index: 1;
+}
+.spark-chip {
+  @apply inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide bg-white/80 text-slate-700 border border-white/60 shadow-sm;
+}
+.spark-chip__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #10b981;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.8);
+}
+.spark-chip--pill {
+  @apply inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide bg-white/85 text-slate-700 border border-white/70 shadow;
+}
+.spark-chip-dot--glow {
+  animation: sparkPulse 2.4s ease-in-out infinite alternate;
+}
+.spark-chip-dot--blue {
+  background: #2563eb;
+  box-shadow: 0 0 8px rgba(37, 99, 235, 0.7);
+}
+.spark-chip-dot--amber {
+  background: #d97706;
+  box-shadow: 0 0 8px rgba(217, 119, 6, 0.7);
+}
+.spark-grid {
+  @apply grid gap-3 mt-4;
+}
+.spark-card {
+  @apply rounded-xl bg-white/80 backdrop-blur px-4 py-3 border border-white/60 shadow-sm;
+}
+.spark-card h4 {
+  @apply text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1;
+}
+.spark-card p {
+  @apply text-sm text-slate-800;
+}
+.spark-card ul {
+  @apply list-disc pl-4 text-sm text-slate-800 space-y-1;
+}
+.spark-badge-row {
+  @apply flex flex-wrap gap-2 mt-3;
+}
+.spark-badge {
+  @apply inline-flex items-center gap-1 rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700 border border-white/60 shadow-sm;
+}
+.spark-badge--hooks {
+  @apply bg-emerald-50 text-emerald-800 border-emerald-100;
+}
+.spark-badge--cadence {
+  @apply bg-sky-50 text-sky-800 border-sky-100;
+}
+.spark-badge--trade {
+  @apply bg-amber-50 text-amber-800 border-amber-100;
+}
+
+@keyframes sparkGlow {
+  0% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0.9;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes sparkPulse {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+}

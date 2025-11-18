@@ -50,7 +50,7 @@ const router = Router()
 router.post('/campaigns/:id/strategist/run', async (req, res, next) => {
   try {
     const { id } = req.params
-    const { customPrompts, deepDive } = req.body || {}
+    const { customPrompts, deepDive, mode } = req.body || {}
     const camp = await prisma.campaign.findUnique({
       where: { id },
       include: { brief: true, outputs: true },
@@ -100,6 +100,7 @@ router.post('/campaigns/:id/strategist/run', async (req, res, next) => {
       offerIQ,
       customPrompts: Array.isArray(customPrompts) ? customPrompts.map((p: any) => String(p)).filter(Boolean) : undefined,
       deepDive: Boolean(deepDive),
+      mode: String(mode || '').toUpperCase() === 'ALT' ? 'ALT' : 'CORE',
     })
 
     const row = await prisma.output.create({

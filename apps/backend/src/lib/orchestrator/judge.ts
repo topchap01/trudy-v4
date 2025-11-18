@@ -96,13 +96,14 @@ function detectMajorFriction(ctx: CampaignContext, narratives: string[]): boolea
 }
 
 function isAssuredValue(ctx: CampaignContext): boolean {
-  // Align with OfferIQ/exports: Cashback is assured; GWP assured only if uncapped/unlimited.
+  // Align with OfferIQ/exports: Cashback is assured only when every claimant gets paid.
   const spec: any = ctx.briefSpec || {}
   const type = String(spec?.typeOfPromotion || '').toUpperCase()
-  const cashback = !!spec?.cashback
+  const cashback = spec?.cashback || null
+  const cashbackAssured = Boolean(cashback && cashback.assured !== false)
   const gwp = spec?.gwp
   const gwpAssured = (type === 'GWP' || !!gwp) && (gwp?.cap === 'UNLIMITED' || gwp?.cap == null)
-  return type === 'CASHBACK' || cashback || gwpAssured
+  return (type === 'CASHBACK' && (cashback ? cashback.assured !== false : true)) || cashbackAssured || gwpAssured
 }
 
 function getTotalWinnersFromBrief(spec: any): number | null {
@@ -349,9 +350,9 @@ export async function runJudge(
       issues.push({
         code: 'HOOK_REPLACE',
         severity: 'NIT',
-        message: 'Ensure a short 2–6 word brand-locked hook exists (even if idea-led).',
+        message: 'Ensure a sharp brand-locked hook exists (even if idea-led).',
       })
-      recommendations.push('Craft a 2–6 word brand-locked hook; test 2–3 variants.')
+      recommendations.push('Craft a sharp, brand-locked hook; test 2–3 variants.')
     }
   }
 

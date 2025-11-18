@@ -15,7 +15,7 @@ Required top-level fields (all optionality MUST be honoured, but include your be
   "stance": string,                           // strategist stance e.g. "BALANCED" | "BOLD" | "CAUTIOUS"
   "brand_position": string,                   // e.g. "LEADER" | "FOLLOWER" | "DISRUPTOR"
   "creative_hook_current": string | null,     // current line on the work/brief
-  "creative_hook_better": string | null,      // your sharper, shorter premium line (2–6 words) or null
+  "creative_hook_better": string | null,      // your sharper, shorter premium line (one breath) or null
   "mechanic": string | null,                  // one-liner, e.g. "Buy, scan QR, auto-entry"
   "retailers": string[] | null,               // names where relevant (e.g. "Coles", "BWS")
   "prizes": {                                 // how the win feels

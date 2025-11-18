@@ -119,6 +119,7 @@ export async function runStrategist(id, opts = {}) {
     payload.customPrompts = opts.customPrompts
   }
   if (opts.deepDive) payload.deepDive = true
+  if (opts.mode) payload.mode = opts.mode
   const data = await api(`/api/campaigns/${id}/strategist/run`, { method: 'POST', body: payload });
   return data?.result ?? data;
 }
@@ -153,4 +154,45 @@ export async function createExport(id, options) {
 // ------- Latest outputs snapshot -------
 export async function getLatestOutputs(id) {
   return await api(`/api/campaigns/${id}/outputs/latest`);
+}
+
+// ------- Variants -------
+export async function getVariants(id) {
+  const data = await api(`/api/campaigns/${id}/variants`);
+  return data?.variants ?? [];
+}
+
+export async function saveVariants(id, variants, options = {}) {
+  const body = { variants }
+  if (options && options.spark) body.spark = options.spark
+  const data = await api(`/api/campaigns/${id}/variants`, { method: 'POST', body });
+  return data?.variants ?? [];
+}
+
+export async function runVariantEvaluate(id, variantId, payload = {}) {
+  const data = await api(`/api/campaigns/${id}/variants/${variantId}/evaluate`, { method: 'POST', body: payload });
+  return data?.result ?? data;
+}
+
+export async function draftVariantOverrides(id, instructions) {
+  const data = await api(`/api/campaigns/${id}/variants/draft`, {
+    method: 'POST',
+    body: { instructions },
+  })
+  return data?.overrides ?? {}
+}
+
+// ------- Promo Builder -------
+export async function getPromoBuilderCards() {
+  const data = await api(`/api/promo-builder/cards`)
+  return data?.cards ?? []
+}
+
+export async function runPromoBuilderEvaluate(payload) {
+  return await api(`/api/promo-builder/evaluate`, { method: 'POST', body: payload })
+}
+
+// ------- Spark -------
+export async function sparkIdea(idea) {
+  return await api(`/api/spark`, { method: 'POST', body: { idea } })
 }

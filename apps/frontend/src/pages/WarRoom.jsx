@@ -21,7 +21,19 @@ import {
   updateResearchOverrides,
   askAnalyst,
   runResearchTask,
+  getVariants,
+  saveVariants as persistVariants,
+  runVariantEvaluate,
+  draftVariantOverrides,
 } from '../lib/campaigns.js'
+import PromoBuilderCanvas from '../components/PromoBuilderCanvas.jsx'
+import {
+  createEmptyWorkspace,
+  workspaceFromSpec,
+  specFromWorkspace,
+  workspaceHasEntries,
+  workspaceToOverrides,
+} from '../utils/promoBuilderMapping.js'
 
 import SavedOutputsPanel from '../components/SavedOutputsPanel.jsx'
 import AskOutputs from '../components/AskOutputs.jsx'
@@ -43,6 +55,12 @@ const RESEARCH_SECTIONS = [
 ]
 
 const MAX_OVERRIDE_ENTRIES = 4
+const VARIANT_OVERRIDES_HINT = '{\n  "cashback": {\n    "amount": 300,\n    "assured": false\n  }\n}'
+const generateClientId = () =>
+  typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `variant-${Date.now()}-${Math.random().toString(16).slice(2)}`
+const VARIANT_INITIAL_STATE = { name: '', notes: '', overrides: VARIANT_OVERRIDES_HINT }
 
 const blankOverrideEntry = () => ({ text: '', source: '' })
 
@@ -97,6 +115,7 @@ export default function WarRoom() {
   const [strategist, setStrategist] = useState('') // scenario playbook
   const [strategistPrompts, setStrategistPrompts] = useState('')
   const [strategistDeepDive, setStrategistDeepDive] = useState(false)
+  const [strategistMode, setStrategistMode] = useState('CORE')
   const [ideationHarness, setIdeationHarness] = useState(null)
   const [ideationUnboxed, setIdeationUnboxed] = useState([])
   const [ideationError, setIdeationError] = useState('')
@@ -121,10 +140,29 @@ export default function WarRoom() {
   const [researchTaskLoading, setResearchTaskLoading] = useState(false)
   const [researchTaskError, setResearchTaskError] = useState('')
 
+  const [variants, setVariants] = useState([])
+  const [variantsLoading, setVariantsLoading] = useState(false)
+  const [variantDraft, setVariantDraft] = useState({ ...VARIANT_INITIAL_STATE })
+  const [variantError, setVariantError] = useState('')
+  const [variantSuccess, setVariantSuccess] = useState('')
+  const [savingVariantsList, setSavingVariantsList] = useState(false)
+  const [runningVariant, setRunningVariant] = useState('')
+  const [variantResults, setVariantResults] = useState({})
+  const [variantLLMInput, setVariantLLMInput] = useState('')
+  const [draftingOverrides, setDraftingOverrides] = useState(false)
+
   // Brief Spec (raw JSON) editor state
   const [specText, setSpecText] = useState('')       // pretty-printed JSON
   const [specErr, setSpecErr] = useState('')         // parse/save errors
   const [savingSpec, setSavingSpec] = useState(false)
+  const [builderWorkspace, setBuilderWorkspace] = useState(createEmptyWorkspace())
+  const [builderDirty, setBuilderDirty] = useState(false)
+  const [briefTab, setBriefTab] = useState('builder')
+  const [sandboxWorkspace, setSandboxWorkspace] = useState(createEmptyWorkspace())
+  const [sandboxName, setSandboxName] = useState('')
+  const [sandboxNotes, setSandboxNotes] = useState('')
+  const [variantTab, setVariantTab] = useState('list')
+  const sandboxHasCards = useMemo(() => workspaceHasEntries(sandboxWorkspace), [sandboxWorkspace])
 
   // Busy flags
   const [loadingFraming, setLoadingFraming] = useState(false)
@@ -161,6 +199,7 @@ export default function WarRoom() {
   const framingSectionRef = useRef(null)
   const strategistRef = useRef(null)
   const evalRef = useRef(null)
+  const variantsRef = useRef(null)
   const ideationRef = useRef(null)
   const hooksRef = useRef(null)
   const opinionRef = useRef(null)
@@ -171,6 +210,133 @@ export default function WarRoom() {
 
   function markRan(key) {
     setLastRun((x) => ({ ...x, [key]: new Date().toISOString() }))
+  }
+
+  async function loadVariantsList() {
+    if (!id) return
+    setVariantsLoading(true)
+    setVariantError('')
+    try {
+      const list = await getVariants(id)
+      setVariants(Array.isArray(list) ? list : [])
+    } catch (err) {
+      console.error('Failed to load variants', err)
+      setVariants([])
+      setVariantError(err?.message || 'Failed to load variants')
+    } finally {
+      setVariantsLoading(false)
+    }
+  }
+
+  async function persistVariantList(nextList) {
+    if (!id) return []
+    setSavingVariantsList(true)
+    setVariantError('')
+    setVariantSuccess('')
+    try {
+      const saved = await persistVariants(id, nextList)
+      setVariants(Array.isArray(saved) ? saved : [])
+      setVariantSuccess('Variants saved')
+      return Array.isArray(saved) ? saved : []
+    } catch (err) {
+      console.error('Save variants failed:', err)
+      setVariantError(err?.message || 'Failed to save variants')
+      return []
+    } finally {
+      setSavingVariantsList(false)
+    }
+  }
+
+  const resetVariantDraft = () => setVariantDraft({ ...VARIANT_INITIAL_STATE })
+
+  async function handleAddVariant(e) {
+    e?.preventDefault()
+    setVariantError('')
+    setVariantSuccess('')
+    if (!variantDraft.name.trim()) {
+      setVariantError('Variant name is required')
+      return
+    }
+    let overrides = {}
+    const rawOverrides = variantDraft.overrides.trim()
+    if (rawOverrides) {
+      try {
+        overrides = JSON.parse(rawOverrides)
+      } catch {
+        setVariantError('Overrides must be valid JSON')
+        return
+      }
+    }
+    const next = [
+      ...variants,
+      {
+        name: variantDraft.name.trim(),
+        notes: variantDraft.notes.trim() || null,
+        overrides,
+      },
+    ]
+    await persistVariantList(next)
+    resetVariantDraft()
+  }
+
+  async function handleRemoveVariant(variantId) {
+    setVariantError('')
+    setVariantSuccess('')
+    const next = variants.filter((v) => v.id !== variantId)
+    await persistVariantList(next)
+  }
+
+  async function handleRunVariantEvaluate(variantId) {
+    if (!id) return
+    setRunningVariant(variantId)
+    setVariantError('')
+    setVariantSuccess('')
+    try {
+      const result = await runVariantEvaluate(id, variantId)
+      const content =
+        typeof result?.content === 'string' ? result.content :
+        typeof result?.result?.content === 'string' ? result.result.content :
+        ''
+      setVariantResults((prev) => ({
+        ...prev,
+        [variantId]: {
+          content: content || 'Variant evaluation completed.',
+          updatedAt: new Date().toISOString(),
+        },
+      }))
+      setVariantSuccess('Variant evaluation complete')
+      markRan('evaluation')
+    } catch (err) {
+      console.error('Variant evaluation failed:', err)
+      setVariantError(err?.message || 'Variant evaluation failed')
+    } finally {
+      setRunningVariant('')
+    }
+  }
+
+  async function handleVariantLLMAssist() {
+    if (!id) return
+    const instructions = variantLLMInput.trim()
+    if (!instructions) {
+      setVariantError('Please describe the override you want.')
+      return
+    }
+    setVariantError('')
+    setVariantSuccess('')
+    setDraftingOverrides(true)
+    try {
+      const overrides = await draftVariantOverrides(id, instructions)
+      setVariantDraft((prev) => ({
+        ...prev,
+        overrides: JSON.stringify(overrides, null, 2),
+      }))
+      setVariantSuccess('Overrides drafted via LLM')
+    } catch (err) {
+      console.error('Variant draft failed:', err)
+      setVariantError(err?.message || 'Variant drafting failed')
+    } finally {
+      setDraftingOverrides(false)
+    }
   }
 
   // Demo prefs (read-only here)
@@ -225,6 +391,7 @@ export default function WarRoom() {
     const b = await getBrief(id) // { brief: {...} } or {...}
     const briefObj = b?.brief ?? b ?? null
     setBrief(briefObj)
+    await loadVariantsList()
 
     let warRoomData = null
     try {
@@ -247,9 +414,13 @@ export default function WarRoom() {
       parsedSpec = briefObj?.parsedJson ?? {}
       setSpecText(JSON.stringify(parsedSpec, null, 2))
       setSpec(parsedSpec)
+      setBuilderWorkspace(workspaceFromSpec(parsedSpec))
+      setBuilderDirty(false)
     } catch {
       setSpecText('{}')
       setSpec({})
+      setBuilderWorkspace(createEmptyWorkspace())
+      setBuilderDirty(false)
     }
 
     // unwrap artifacts array for ExportPanel
@@ -312,6 +483,12 @@ export default function WarRoom() {
             // ignore parse errors
           }
         }
+        const evalOutLatest = latest.outputs.find((o) => ['evaluation','evaluationNarrative'].includes(o?.type))
+        if (evalOutLatest?.params) {
+          setEvalMeta(evalOutLatest.params)
+        } else if (evaluationStr != null) {
+          setEvalMeta(null)
+        }
       }
       const ideationLatest = latest?.ideation || null
       const resolvedIdeation = ideationLatest || (warRoomData?.latest?.ideation || null)
@@ -353,6 +530,7 @@ export default function WarRoom() {
     framing: () => framingSectionRef.current?.scrollIntoView({ behavior: 'smooth' }),
     strategist: () => strategistRef.current?.scrollIntoView({ behavior: 'smooth' }),
     evaluate: () => evalRef.current?.scrollIntoView({ behavior: 'smooth' }),
+    variants: () => variantsRef.current?.scrollIntoView({ behavior: 'smooth' }),
     ideation: () => ideationRef.current?.scrollIntoView({ behavior: 'smooth' }),
     creative: () => ideationRef.current?.scrollIntoView({ behavior: 'smooth' }),
     sparks: () => ideationRef.current?.scrollIntoView({ behavior: 'smooth' }),
@@ -411,7 +589,10 @@ export default function WarRoom() {
     try {
       setSpecText(JSON.stringify(b?.parsedJson ?? {}, null, 2))
       setSpecErr('')
-      setSpec(b?.parsedJson ?? {})
+      const nextSpec = b?.parsedJson ?? {}
+      setSpec(nextSpec)
+      setBuilderWorkspace(workspaceFromSpec(nextSpec))
+      setBuilderDirty(false)
     } catch {}
   }
 
@@ -431,12 +612,160 @@ export default function WarRoom() {
       setBrief(b)
       setSpecText(JSON.stringify(b?.parsedJson ?? {}, null, 2))
       setSpecErr('')
-      setSpec(b?.parsedJson ?? {})
+      const nextSpec = b?.parsedJson ?? {}
+      setSpec(nextSpec)
+      setBuilderWorkspace(workspaceFromSpec(nextSpec))
+      setBuilderDirty(false)
     } catch (e) {
       setSpecErr(e?.message || 'Failed to save spec')
     } finally {
       setSavingSpec(false)
     }
+  }
+
+  const handleBuilderWorkspaceChange = (nextWorkspace) => {
+    setBuilderWorkspace(nextWorkspace)
+    setSpec((prev) => {
+      const nextSpec = specFromWorkspace(prev, nextWorkspace)
+      setSpecText(JSON.stringify(nextSpec ?? {}, null, 2))
+      return nextSpec
+    })
+    setBuilderDirty(true)
+  }
+
+  const handleBuilderSave = async () => {
+    await saveSpecJSON()
+  }
+
+  const handleBuilderSaveAndEvaluate = async () => {
+    await saveSpecJSON()
+    await doEvaluate()
+  }
+
+  const injectHookIntoWorkspace = (workspace, hook) => {
+    return workspace.map((column) => {
+      if (column.lane !== 'Hook') return column
+      if (!column.entries.length) {
+        return {
+          ...column,
+          entries: [
+            {
+              id: makeId(),
+              cardId: 'hook-core',
+              values: { headline: hook.headline, support: hook.support || '' },
+            },
+          ],
+        }
+      }
+      return {
+        ...column,
+        entries: column.entries.map((entry, idx) =>
+          idx === 0
+            ? {
+                ...entry,
+                values: { ...(entry.values || {}), headline: hook.headline, support: hook.support || '' },
+              }
+            : entry
+        ),
+      }
+    })
+  }
+
+  const injectCadenceIntoWorkspace = (workspace, cadenceLine) => {
+    return workspace.map((column) => {
+      if (column.lane !== 'Cadence') return column
+      if (!column.entries.length) {
+        return {
+          ...column,
+          entries: [
+            {
+              id: makeId(),
+              cardId: 'cadence-instant',
+              values: { cadence_copy: cadenceLine, winner_vis: '' },
+            },
+          ],
+        }
+      }
+      return {
+        ...column,
+        entries: column.entries.map((entry, idx) =>
+          idx === 0
+            ? {
+                ...entry,
+                values: { ...(entry.values || {}), cadence_copy: cadenceLine },
+              }
+            : entry
+        ),
+      }
+    })
+  }
+
+  const applyHookSuggestion = (hook) => {
+    if (!hook?.headline) return
+    const nextWorkspace = injectHookIntoWorkspace(builderWorkspace, hook)
+    handleBuilderWorkspaceChange(nextWorkspace)
+    setBriefTab('builder')
+    setBuilderDirty(true)
+  }
+
+  const applyCadenceSuggestion = (line) => {
+    if (!line) return
+    const nextWorkspace = injectCadenceIntoWorkspace(builderWorkspace, line)
+    handleBuilderWorkspaceChange(nextWorkspace)
+    setBriefTab('builder')
+    setBuilderDirty(true)
+  }
+
+  const cloneWorkspace = (workspace) =>
+    workspace.map((column) => ({
+      lane: column.lane,
+      entries: Array.isArray(column.entries)
+        ? column.entries.map((entry) => ({
+            ...entry,
+            values: { ...(entry.values || {}) },
+          }))
+        : [],
+    }))
+
+  const handleSandboxCopyBaseline = () => {
+    setSandboxWorkspace(cloneWorkspace(builderWorkspace))
+  }
+
+  const handleSandboxReset = () => {
+    setSandboxWorkspace(createEmptyWorkspace())
+    setSandboxName('')
+    setSandboxNotes('')
+  }
+
+  const handleSandboxVariantSave = async ({ runEvaluation: runEval = false } = {}) => {
+    setVariantError('')
+    setVariantSuccess('')
+    if (!sandboxHasCards) {
+      setVariantError('Add at least one card in the idea sandbox before saving a variant.')
+      return
+    }
+    const overrides = workspaceToOverrides(sandboxWorkspace)
+    if (!overrides || !Object.keys(overrides).length) {
+      setVariantError('No overrides were captured from the sandbox.')
+      return
+    }
+    const variantName = sandboxName.trim() || `Idea variant ${variants.length + 1}`
+    const payload = {
+      id: generateClientId(),
+      name: variantName,
+      notes: sandboxNotes.trim() || null,
+      overrides,
+    }
+    const saved = await persistVariantList([...variants, payload])
+    if (!saved.length) return
+    setSandboxName('')
+    setSandboxNotes('')
+    setVariantTab('list')
+    if (!runEval) {
+      setVariantSuccess(`Saved “${variantName}” as a variant`)
+      return
+    }
+    await handleRunVariantEvaluate(payload.id)
   }
 
   async function handleRunAllPhases() {
@@ -579,6 +908,7 @@ export default function WarRoom() {
       const r = await runStrategist(id, {
         customPrompts: extraPrompts,
         deepDive: strategistDeepDive,
+        mode: strategistMode,
       })
       const content =
         (r && typeof r === 'object' && typeof r.content === 'string') ? r.content :
@@ -743,6 +1073,22 @@ export default function WarRoom() {
       .sort((a, b) => (b.at?.getTime() || 0) - (a.at?.getTime() || 0))
   }, [debugBundle])
 
+  const sparkAnalysis = useMemo(() => debugBundle?.snapshot?.spark?.analysis || null, [debugBundle])
+  const sparkSummary = typeof sparkAnalysis?.summary === 'string' ? sparkAnalysis.summary.trim() : ''
+  const sparkAudience = typeof sparkAnalysis?.audience === 'string' ? sparkAnalysis.audience.trim() : ''
+  const sparkValueLine =
+    typeof sparkAnalysis?.value?.description === 'string'
+      ? sparkAnalysis.value.description.trim()
+      : (sparkAnalysis?.value?.summary || '').toString().trim()
+  const sparkTensions = Array.isArray(sparkAnalysis?.tensions)
+    ? sparkAnalysis.tensions.map((entry) => (typeof entry === 'string' ? entry.trim() : '')).filter(Boolean).slice(0, 3)
+    : []
+  const sparkCompliance = Array.isArray(sparkAnalysis?.compliance)
+    ? sparkAnalysis.compliance.map((entry) => (typeof entry === 'string' ? entry.trim() : '')).filter(Boolean).slice(0, 3)
+    : []
+  const sparkTradeReward = typeof sparkAnalysis?.trade?.reward === 'string' ? sparkAnalysis.trade.reward.trim() : ''
+  const sparkTradeGuardrail = typeof sparkAnalysis?.trade?.guardrail === 'string' ? sparkAnalysis.trade.guardrail.trim() : ''
+
   const analystHooks = useMemo(() => {
     const hooks =
       debugBundle?.snapshot?.narratives?.evaluation?.meta?.hooksRecommended ||
@@ -750,6 +1096,25 @@ export default function WarRoom() {
       []
     return Array.isArray(hooks) ? hooks.slice(0, 5) : []
   }, [debugBundle])
+
+  const sparkHooks = useMemo(() => {
+    const raw = debugBundle?.snapshot?.spark?.hookPlayground?.options
+    if (!Array.isArray(raw) || !raw.length) return []
+    return raw.slice(0, 5).map((opt, idx) => ({
+      headline: opt?.headline || `Spark hook ${idx + 1}`,
+      support: opt?.support || '',
+    }))
+  }, [debugBundle])
+
+  const sparkCadence = useMemo(() => {
+    const lines = debugBundle?.snapshot?.spark?.hookPlayground?.cadence
+    return Array.isArray(lines) ? lines.filter(Boolean).slice(0, 5) : []
+  }, [debugBundle])
+
+  const builderHookSuggestions = useMemo(() => {
+    const evalHooks = Array.isArray(analystHooks) ? analystHooks.map((headline) => ({ headline, support: '' })) : []
+    return [...sparkHooks, ...evalHooks].slice(0, 6)
+  }, [sparkHooks, analystHooks])
 
   const analystVerdict = debugBundle?.snapshot?.narratives?.evaluation?.meta?.ui?.verdict || null
 
@@ -771,6 +1136,7 @@ export default function WarRoom() {
             <Item label="Framing" onClick={() => framingSectionRef.current?.scrollIntoView({ behavior: 'smooth' })} />
             <Item label="Strategist" onClick={() => strategistRef.current?.scrollIntoView({ behavior: 'smooth' })} />
             <Item label="Evaluation" onClick={() => evalRef.current?.scrollIntoView({ behavior: 'smooth' })} />
+            <Item label="Variants" onClick={() => variantsRef.current?.scrollIntoView({ behavior: 'smooth' })} />
             <Item label="Creative Sparks" onClick={() => ideationRef.current?.scrollIntoView({ behavior: 'smooth' })} />
             <Item label="Hooks" onClick={() => hooksRef.current?.scrollIntoView({ behavior: 'smooth' })} />
             <Item label="Opinion" onClick={() => opinionRef.current?.scrollIntoView({ behavior: 'smooth' })} />
@@ -793,10 +1159,13 @@ export default function WarRoom() {
   const tradePriority = String(trade?.priority || '').toUpperCase()
   const tradeRows = Array.isArray(trade?.table) ? trade.table : []
   const hasHighTrade = tradePriority === 'HIGH' && tradeRows.length > 0
+  const tradeOpportunity = evalMeta?.ui?.tradeOpportunity
   const runAgainMoves = Array.isArray(evalMeta?.run_again_moves) ? evalMeta.run_again_moves : []
   const symbolism = Array.isArray(evalMeta?.symbolism) ? evalMeta.symbolism : []
   const hookWhyChange = evalMeta?.hook_why_change || null
   const propositionHint = evalMeta?.proposition_hint || null
+  const multiAgentEvaluation = evalMeta?.multiAgentEvaluation || null
+  const multiAgentImprovement = evalMeta?.multiAgentImprovement || null
 
   // NEW: surfaced UI/meta
   const ui = evalMeta?.ui || {}
@@ -806,6 +1175,7 @@ export default function WarRoom() {
   const dealbreakers = Array.isArray(ui?.dealbreakers) ? ui.dealbreakers : []
   const offerIQ = ui?.offerIQ || evalMeta?.offerIQ || null
   const benchmarks = ui?.benchmarks || evalMeta?.benchmarks || null
+  const winsense = ui?.winsense || evalMeta?.winsense || null
   const framingBenchmarks = framingMeta?.benchmarks || null
   const researchPack = warResearch || framingMeta?.research || evalMeta?.research || null
   const researchMeta = researchPack?.meta || null
@@ -1028,38 +1398,206 @@ export default function WarRoom() {
                 </div>
               ) : null}
 
-              {/* Existing “friendly” editor */}
-              <FramingEditor brief={brief} campaignId={id} onSave={saveBrief} />
-
-              {/* Raw JSON editor (authoritative) */}
-              <div className="mt-6 border-t pt-4">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="text-sm font-medium">Brief Spec (raw JSON)</div>
-                  {specErr ? <div className="text-xs text-red-600">{specErr}</div> : null}
-                </div>
-                <textarea
-                  className="w-full border rounded p-2 font-mono text-sm"
-                  rows={14}
-                  spellCheck={false}
-                  value={specText}
-                  onChange={(e) => { setSpecText(e.target.value); setSpecErr('') }}
-                />
-                <div className="mt-2 flex gap-2">
-                  <Button onClick={saveSpecJSON} loading={savingSpec}>Save Spec</Button>
+              <div className="flex flex-wrap gap-2 border-b border-gray-200 pb-2 mb-4">
+                {[
+                  { id: 'builder', label: 'Builder' },
+                  { id: 'form', label: 'Guided form' },
+                  { id: 'json', label: 'JSON' },
+                ].map((tab) => (
                   <button
-                    className="text-sm px-2 py-1 rounded border hover:bg-gray-50"
-                    onClick={() => {
-                      try {
-                        setSpecText(JSON.stringify(brief?.parsedJson ?? {}, null, 2))
-                        setSpecErr('')
-                      } catch {}
-                    }}
+                    key={tab.id}
+                    className={`text-sm px-3 py-1 rounded ${briefTab === tab.id ? 'bg-sky-600 text-white' : 'bg-white text-gray-700 border'} `}
+                    onClick={() => setBriefTab(tab.id)}
                   >
-                    Reset to server
+                    {tab.label}
                   </button>
-                </div>
+                ))}
               </div>
 
+              {briefTab === 'builder' && (
+                <div className="space-y-8">
+                  <div className="grid gap-6 lg:grid-cols-[1.6fr,1fr]">
+                  <div className="space-y-4">
+                    <div className="border border-slate-200 rounded p-3 bg-slate-50 text-sm text-slate-700">
+                      <div className="font-semibold text-slate-900 mb-1">Baseline brief builder</div>
+                      <p>Use this to keep the master brief tidy. Edits sync straight into the JSON and every downstream agent.</p>
+                      <ul className="list-disc pl-5 mt-2 text-xs text-slate-600 space-y-1">
+                        <li>Stack cards for hook, value, mechanic, cadence, trade and compliance.</li>
+                        <li>Hit “Save brief” to persist, or “Save & Run Evaluation” to re-score straight away.</li>
+                        <li>Need to explore alternate paths? Jump into the sandbox below without touching the baseline.</li>
+                      </ul>
+                    </div>
+
+                    {(sparkSummary || sparkAudience || sparkValueLine || sparkTensions.length || sparkCompliance.length || sparkTradeReward || sparkTradeGuardrail) ? (
+                      <div className="spark-panel space-y-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Spark cues</p>
+                            <p className="text-lg font-semibold text-slate-900">The promise we’re honouring</p>
+                            <p className="text-sm text-slate-700/80">Every edit should keep these anchors intact.</p>
+                          </div>
+                          <span className="spark-chip">
+                            <span className="spark-chip__dot" />
+                            Spark
+                          </span>
+                        </div>
+                        <div className="spark-grid md:grid-cols-2">
+                          {sparkSummary ? (
+                            <div className="spark-card">
+                              <h4>Summary</h4>
+                              <p>{sparkSummary}</p>
+                            </div>
+                          ) : null}
+                          {sparkAudience ? (
+                            <div className="spark-card">
+                              <h4>Audience</h4>
+                              <p>{sparkAudience}</p>
+                            </div>
+                          ) : null}
+                          {sparkValueLine ? (
+                            <div className="spark-card">
+                              <h4>Value lens</h4>
+                              <p>{sparkValueLine}</p>
+                            </div>
+                          ) : null}
+                          {sparkTensions.length ? (
+                            <div className="spark-card">
+                              <h4>Shopper tensions</h4>
+                              <ul>
+                                {sparkTensions.map((line, idx) => (
+                                  <li key={`spark-tension-${idx}`}>{line}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null}
+                          {sparkCompliance.length ? (
+                            <div className="spark-card">
+                              <h4>Compliance</h4>
+                              <ul>
+                                {sparkCompliance.map((line, idx) => (
+                                  <li key={`spark-guard-${idx}`}>{line}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null}
+                          {(sparkTradeReward || sparkTradeGuardrail) ? (
+                            <div className="spark-card">
+                              <h4>Trade cue</h4>
+                              <p>{[sparkTradeReward, sparkTradeGuardrail].filter(Boolean).join(' • ')}</p>
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {builderHookSuggestions.length || sparkCadence.length ? (
+                      <div className="spark-panel space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Hook & cadence kit</p>
+                            <p className="text-lg font-semibold text-slate-900">Drop these straight into the builder</p>
+                          </div>
+                          <span className="spark-chip">
+                            <span className="spark-chip__dot" />
+                            Ready to use
+                          </span>
+                        </div>
+                        <div className="spark-grid">
+                          {builderHookSuggestions.length ? builderHookSuggestions.map((hook, idx) => (
+                            <div key={`${hook.headline}-${idx}`} className="spark-card">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <h4>Hook option</h4>
+                                  <p className="text-base font-semibold text-slate-900">{hook.headline}</p>
+                                  {hook.support ? <p className="text-xs text-slate-600 mt-1">{hook.support}</p> : null}
+                                </div>
+                                <Button variant="outline" onClick={() => applyHookSuggestion(hook)}>Use</Button>
+                              </div>
+                            </div>
+                          )) : null}
+                          {sparkCadence.length ? sparkCadence.map((line, idx) => (
+                            <div key={`${line}-${idx}`} className="spark-card">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <h4>Cadence riff</h4>
+                                  <p className="text-sm text-slate-900">{line}</p>
+                                </div>
+                                <Button variant="outline" onClick={() => applyCadenceSuggestion(line)}>Use</Button>
+                              </div>
+                            </div>
+                          )) : null}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <PromoBuilderCanvas
+                      workspace={builderWorkspace}
+                        onWorkspaceChange={handleBuilderWorkspaceChange}
+                        showSerialized={false}
+                        showEvaluateButton={false}
+                        embedded
+                      />
+                      <div className="flex flex-wrap gap-2 items-center">
+                        <Button onClick={handleBuilderSave} loading={savingSpec}>Save brief</Button>
+                        <Button
+                          variant="outline"
+                          onClick={handleBuilderSaveAndEvaluate}
+                          loading={savingSpec || loadingEvaluate}
+                        >
+                          Save & Run Evaluation
+                        </Button>
+                        {builderDirty && <span className="text-xs text-amber-600">Unsaved builder changes</span>}
+                      </div>
+                    </div>
+                    <BuilderDiagnosticsPanel
+                      atAGlance={atAGlance}
+                      dealbreakers={dealbreakers}
+                      offerIQ={offerIQ}
+                      winsense={winsense}
+                      tradeOpportunity={tradeOpportunity}
+                      tradeSummary={tradeRows}
+                      hasHighTrade={hasHighTrade}
+                    />
+                  </div>
+
+                </div>
+              )}
+
+              {briefTab === 'form' && (
+                <div>
+                  <FramingEditor brief={brief} campaignId={id} onSave={saveBrief} />
+                </div>
+              )}
+
+              {briefTab === 'json' && (
+                <div className="border-t pt-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="text-sm font-medium">Brief Spec (raw JSON)</div>
+                    {specErr ? <div className="text-xs text-red-600">{specErr}</div> : null}
+                  </div>
+                  <textarea
+                    className="w-full border rounded p-2 font-mono text-sm"
+                    rows={14}
+                    spellCheck={false}
+                    value={specText}
+                    onChange={(e) => { setSpecText(e.target.value); setSpecErr('') }}
+                  />
+                  <div className="mt-2 flex gap-2">
+                    <Button onClick={saveSpecJSON} loading={savingSpec}>Save Spec</Button>
+                    <button
+                      className="text-sm px-2 py-1 rounded border hover:bg-gray-50"
+                      onClick={() => {
+                        try {
+                          setSpecText(JSON.stringify(brief?.parsedJson ?? {}, null, 2))
+                          setSpecErr('')
+                        } catch {}
+                      }}
+                    >
+                      Reset to server
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </section>
 
@@ -1113,6 +1651,23 @@ export default function WarRoom() {
                   />
                   Deep dive (longer scenarios)
                 </label>
+                <div className="flex items-center gap-2 text-xs">
+                  {['CORE', 'ALT'].map((mode) => {
+                    const active = strategistMode === mode
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => setStrategistMode(mode)}
+                        className={`px-3 py-1 rounded border transition ${
+                          active ? 'bg-sky-600 text-white border-sky-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        {mode === 'CORE' ? 'Core mode' : 'ALT mode'}
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">
@@ -1142,8 +1697,8 @@ export default function WarRoom() {
               title="Evaluation"
               metaRight={lastRun.evaluation ? `Last run: ${fmtTime(lastRun.evaluation)}` : ''}
             />
-            <div className="grid gap-6 lg:grid-cols-[2fr,1fr]">
-              <div className="card">
+        <div className="grid gap-6 lg:grid-cols-[2fr,1fr]">
+          <div className="card">
                 <div className="mb-3 flex flex-wrap gap-2 items-center">
                   <Button onClick={doEvaluate} loading={loadingEvaluate} disabled={runningAll}>Run Evaluation</Button>
                   {evalMeta && (
@@ -1158,17 +1713,26 @@ export default function WarRoom() {
 
                 {(verdict || positionVsMarket || assuredValue) && (
                   <div className="mb-3 grid md:grid-cols-3 gap-3">
-                    <div className="border rounded p-3 bg-white">
-                      <div className="text-sm font-medium mb-1">Decision</div>
-                      {verdict ? <VerdictBadge verdict={verdict} /> : <span className="text-sm text-gray-600">—</span>}
+                    <div className="spark-card">
+                      <div className="flex items-center gap-3 mb-1">
+                        <span className="spark-chip spark-chip--pill">Verdict</span>
+                        <span className="spark-chip-dot spark-chip-dot--glow" />
+                      </div>
+                      {verdict ? <VerdictBadge verdict={verdict} /> : <span className="text-sm text-slate-600">—</span>}
                     </div>
-                    <div className="border rounded p-3 bg-white">
-                      <div className="text-sm font-medium mb-1">Competitive position</div>
+                    <div className="spark-card">
+                      <div className="flex items-center gap-3 mb-1">
+                        <span className="spark-chip spark-chip--pill">Position</span>
+                        <span className="spark-chip-dot spark-chip-dot--blue" />
+                      </div>
                       <PosPill pos={positionVsMarket} />
                     </div>
-                    <div className="border rounded p-3 bg-white">
-                      <div className="text-sm font-medium mb-1">Assured value</div>
-                      <span className="text-sm">{assuredValue ? 'Yes (cashback/GWP)' : 'No'}</span>
+                    <div className="spark-card">
+                      <div className="flex items-center gap-3 mb-1">
+                        <span className="spark-chip spark-chip--pill">Assured</span>
+                        <span className="spark-chip-dot spark-chip-dot--amber" />
+                      </div>
+                      <p className="text-sm text-slate-900">{assuredValue ? 'Yes (cashback/GWP)' : 'No'}</p>
                     </div>
                   </div>
                 )}
@@ -1179,6 +1743,17 @@ export default function WarRoom() {
                     <ul className="list-disc pl-5 space-y-1 text-sm text-red-900">
                       {dealbreakers.slice(0,5).map((d, i) => <li key={i}>{d}</li>)}
                     </ul>
+                  </div>
+                ) : null}
+
+                {multiAgentEvaluation ? (
+                  <div className="mb-3">
+                    <MultiAgentRoomPanel data={multiAgentEvaluation} />
+                  </div>
+                ) : null}
+                {multiAgentImprovement ? (
+                  <div className="mb-3">
+                    <MultiAgentUpgradePanel data={multiAgentImprovement} />
                   </div>
                 ) : null}
 
@@ -1206,12 +1781,40 @@ export default function WarRoom() {
                   </div>
                 ) : null}
 
-                {evaluation && <EvaluationView text={evaluation} />}
+            {evaluation && <EvaluationView text={evaluation} />}
 
-                {atAGlance?.length ? (
-                  <ScoreboardBlock items={atAGlance} defaultCollapsed={hideScoreboard} />
+            {sparkHooks.length || sparkCadence.length ? (
+              <div className="space-y-4">
+                {sparkHooks.length ? (
+                  <div className="border rounded p-3 bg-white">
+                    <div className="text-sm font-semibold mb-2">Spark hooks</div>
+                    <ul className="space-y-2">
+                      {sparkHooks.map((hook, idx) => (
+                        <li key={`${hook.headline}-${idx}`}>
+                          <div className="font-semibold text-sm">{hook.headline}</div>
+                          {hook.support ? <div className="text-xs text-gray-600">{hook.support}</div> : null}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {sparkCadence.length ? (
+                  <div className="border rounded p-3 bg-white">
+                    <div className="text-sm font-semibold mb-2">Spark cadence</div>
+                    <ul className="list-disc pl-5 space-y-1 text-sm text-gray-700">
+                      {sparkCadence.map((line, idx) => (
+                        <li key={`${line}-${idx}`}>{line}</li>
+                      ))}
+                    </ul>
+                  </div>
                 ) : null}
               </div>
+            ) : null}
+
+            {atAGlance?.length ? (
+              <ScoreboardBlock items={atAGlance} defaultCollapsed={hideScoreboard} />
+            ) : null}
+          </div>
 
               <div className="space-y-4">
                 {/* OfferIQ panel */}
@@ -1225,6 +1828,15 @@ export default function WarRoom() {
                   <div className="border rounded p-3 bg-white">
                     <div className="text-sm font-medium mb-2">Trade plan (HIGH priority)</div>
                     <TradeTable rows={tradeRows} />
+                  </div>
+                )}
+                {!hasHighTrade && tradeOpportunity?.flag && (
+                  <div className="border rounded p-3 bg-white">
+                    <div className="text-sm font-medium mb-1 text-amber-800">Trade opportunity</div>
+                    <p className="text-sm text-gray-700">{tradeOpportunity.why}</p>
+                    {tradeOpportunity.suggestion ? (
+                      <p className="text-xs text-gray-500 mt-1">{tradeOpportunity.suggestion}</p>
+                    ) : null}
                   </div>
                 )}
 
@@ -1272,6 +1884,227 @@ export default function WarRoom() {
                   </div>
                 ) : null}
             </div>
+          </div>
+        </section>
+
+        {/* Variants */}
+        <section ref={variantsRef} className="mb-10">
+          <SectionHead title="Variants" />
+          <div className="card space-y-4">
+            <div className="flex flex-wrap gap-2 border-b border-gray-200 pb-2">
+              {[
+                { id: 'list', label: 'Variant list' },
+                { id: 'sandbox', label: 'Sandbox builder' },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  className={`text-sm px-3 py-1 rounded ${
+                    variantTab === tab.id ? 'bg-sky-600 text-white' : 'bg-white text-gray-700 border'
+                  }`}
+                  onClick={() => setVariantTab(tab.id)}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            {variantError ? (
+              <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded p-3">{variantError}</div>
+            ) : null}
+            {variantSuccess ? (
+              <div className="text-sm text-green-700 bg-green-50 border border-green-200 rounded p-3">{variantSuccess}</div>
+            ) : null}
+
+            {variantTab === 'list' ? (
+              <div className="space-y-4">
+                <p className="text-sm text-gray-600">
+                  Capture quick “what if” overrides without touching the base brief. Save JSON variants, run evaluations, and keep everything in one rail.
+                </p>
+                {variantsLoading ? (
+                  <div className="text-sm text-gray-600">Loading variants…</div>
+                ) : variants.length ? (
+                  <div className="space-y-3">
+                    {variants.map((variant) => (
+                      <div key={variant.id} className="border rounded p-3 bg-white space-y-2">
+                        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                          <div>
+                            <div className="text-sm font-semibold">{variant.name}</div>
+                            {variant.notes ? <div className="text-sm text-gray-600">{variant.notes}</div> : null}
+                            <div className="text-xs text-gray-400">
+                              Updated {variant.updatedAt ? new Date(variant.updatedAt).toLocaleString() : 'recently'}
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              variant="outline"
+                              onClick={() => handleRunVariantEvaluate(variant.id)}
+                              loading={runningVariant === variant.id}
+                            >
+                              Run evaluation
+                            </Button>
+                            <Button
+                              variant="outline"
+                              onClick={() => handleRemoveVariant(variant.id)}
+                              disabled={savingVariantsList || runningVariant === variant.id}
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        </div>
+                        <details className="text-sm">
+                          <summary className="cursor-pointer text-gray-700">Overrides</summary>
+                          <pre className="mt-2 p-3 bg-gray-50 rounded text-xs overflow-auto">
+                            {JSON.stringify(variant.overrides || {}, null, 2)}
+                          </pre>
+                        </details>
+                        {variantResults[variant.id]?.content ? (
+                          <div className="border-t pt-2">
+                            <div className="text-xs uppercase text-gray-500 mb-1">Latest run preview</div>
+                            <RevealBlock text={variantResults[variant.id].content} />
+                            <div className="text-[11px] text-gray-400 mt-1">
+                              {variantResults[variant.id].updatedAt
+                                ? `Captured ${new Date(variantResults[variant.id].updatedAt).toLocaleString()}`
+                                : ''}
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-600 border border-dashed border-gray-200 rounded p-4 bg-gray-50">
+                    No variants yet. Use the JSON form below or jump to the sandbox tab to build one visually.
+                  </div>
+                )}
+                <form className="border-t pt-4 space-y-3" onSubmit={handleAddVariant}>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">LLM assist (optional)</label>
+                    <div className="flex flex-col gap-2 md:flex-row">
+                      <textarea
+                        className="flex-1 border rounded px-3 py-2 text-sm"
+                        rows={2}
+                        placeholder="e.g., Increase cashback to $300 but only 1 in 3 win; others get $0."
+                        value={variantLLMInput}
+                        onChange={(e) => setVariantLLMInput(e.target.value)}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleVariantLLMAssist}
+                        loading={draftingOverrides}
+                      >
+                        Build overrides
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="grid md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Variant name</label>
+                      <input
+                        className="w-full border rounded px-3 py-2 text-sm"
+                        placeholder="e.g., 1-in-3 cashback odds"
+                        value={variantDraft.name}
+                        onChange={(e) => setVariantDraft((prev) => ({ ...prev, name: e.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Notes (optional)</label>
+                      <input
+                        className="w-full border rounded px-3 py-2 text-sm"
+                        placeholder="Quick reminder for future you"
+                        value={variantDraft.notes}
+                        onChange={(e) => setVariantDraft((prev) => ({ ...prev, notes: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Overrides (JSON)</label>
+                    <textarea
+                      className="w-full border rounded px-3 py-2 text-sm"
+                      rows={5}
+                      value={variantDraft.overrides}
+                      onChange={(e) => setVariantDraft((prev) => ({ ...prev, overrides: e.target.value }))}
+                      placeholder={VARIANT_OVERRIDES_HINT}
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button type="submit" loading={savingVariantsList}>Save variant</Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={resetVariantDraft}
+                      disabled={savingVariantsList}
+                    >
+                      Reset form
+                    </Button>
+                  </div>
+                </form>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-base font-semibold text-gray-900">Sandbox builder</div>
+                      <p className="text-sm text-gray-600">
+                        Build alternate mechanics visually. When it sings, save it straight into the variant list (and optionally run Evaluation).
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button variant="outline" onClick={handleSandboxCopyBaseline}>Pull baseline</Button>
+                      <Button variant="outline" onClick={handleSandboxReset}>Clear sandbox</Button>
+                    </div>
+                  </div>
+                  <PromoBuilderCanvas
+                    workspace={sandboxWorkspace}
+                    onWorkspaceChange={setSandboxWorkspace}
+                    showSerialized={false}
+                    showEvaluateButton={false}
+                    embedded
+                  />
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Variant name</label>
+                      <input
+                        className="w-full border rounded px-3 py-2 text-sm"
+                        placeholder="e.g., Guinness 1-in-3 cashback"
+                        value={sandboxName}
+                        onChange={(e) => setSandboxName(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Notes (optional)</label>
+                      <textarea
+                        className="w-full border rounded px-3 py-2 text-sm"
+                        rows={2}
+                        placeholder="Use this to remind yourself what changed."
+                        value={sandboxNotes}
+                        onChange={(e) => setSandboxNotes(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <Button
+                      onClick={() => handleSandboxVariantSave({ runEvaluation: false })}
+                      disabled={!sandboxHasCards || savingVariantsList}
+                      loading={savingVariantsList}
+                    >
+                      Save as variant
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => handleSandboxVariantSave({ runEvaluation: true })}
+                      disabled={!sandboxHasCards || savingVariantsList}
+                      loading={savingVariantsList}
+                    >
+                      Save & Evaluate
+                    </Button>
+                    {!sandboxHasCards && (
+                      <span className="text-xs text-gray-500">Add at least one card to enable the sandbox actions.</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </section>
 
@@ -2016,6 +2849,202 @@ function InfoNote({ title, children }) {
   )
 }
 
+function MultiAgentRoomPanel({ data }) {
+  const bruce = data?.bruce || null
+  if (!bruce) return null
+  const reasons = Array.isArray(bruce.top_reasons) ? bruce.top_reasons.filter(Boolean).slice(0, 3) : []
+  const mustFix = Array.isArray(bruce.must_fix_items) ? bruce.must_fix_items.filter(Boolean).slice(0, 3) : []
+  const quickWins = Array.isArray(bruce.quick_wins) ? bruce.quick_wins.filter(Boolean).slice(0, 3) : []
+  const agentSnapshots = Array.isArray(bruce.agent_snapshots) && bruce.agent_snapshots.length
+    ? bruce.agent_snapshots
+    : Array.isArray(data?.agents)
+      ? data.agents.map((agent) => ({
+          agent: agent?.agent || 'Agent',
+          verdict: agent?.verdict || '',
+          headline: agent?.headline || agent?.notes_for_bruce || '',
+        }))
+      : []
+
+  return (
+    <div className="border rounded p-4 bg-white space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-[11px] uppercase tracking-wide text-slate-600">Room verdict</p>
+          <p className="text-lg font-semibold text-slate-900">{bruce.verdict || '—'}</p>
+          {bruce.notes ? <p className="text-xs text-slate-500 mt-1">{bruce.notes}</p> : null}
+        </div>
+        <VerdictBadge verdict={bruce.verdict || '—'} />
+      </div>
+
+      {reasons.length ? (
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-600 mb-1">Top reasons</div>
+          <ul className="list-disc pl-5 space-y-1 text-sm text-slate-800">
+            {reasons.map((reason, idx) => (
+              <li key={`ma-reason-${idx}`}>{reason}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {mustFix.length ? (
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-600 mb-1">Must-fix</div>
+          <ul className="list-disc pl-5 space-y-1 text-sm text-slate-800">
+            {mustFix.map((item, idx) => (
+              <li key={`ma-fix-${idx}`}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {quickWins.length ? (
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-600 mb-1">Quick wins</div>
+          <ul className="list-disc pl-5 space-y-1 text-sm text-slate-800">
+            {quickWins.map((item, idx) => (
+              <li key={`ma-win-${idx}`}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {agentSnapshots.length ? (
+        <div className="grid md:grid-cols-2 gap-3">
+          {agentSnapshots.map((snap, idx) => (
+            <div key={`ma-agent-${snap.agent || idx}`} className="border rounded p-3 bg-slate-50">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">{snap.agent}</span>
+                <VerdictBadge verdict={snap.verdict || '—'} />
+              </div>
+              <div className="text-sm text-slate-900">{snap.headline || '—'}</div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function MultiAgentUpgradePanel({ data }) {
+  if (!data || !data.bruce) return null
+  const bruce = data.bruce
+  const options = Array.isArray(bruce.upgrade_options) ? bruce.upgrade_options.slice(0, 2) : []
+  const recommended = bruce.recommended_option_label || null
+  const agentBlocks = Array.isArray(data.agents) ? data.agents : []
+
+  if (!options.length && !agentBlocks.length) return null
+
+  return (
+    <div className="border rounded p-4 bg-white space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-[11px] uppercase tracking-wide text-slate-600">Upgrade plan</p>
+          <p className="text-lg font-semibold text-slate-900">Room recommendations</p>
+          {bruce.notes ? <p className="text-xs text-slate-500 mt-1">{bruce.notes}</p> : null}
+        </div>
+        {recommended ? (
+          <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full border border-sky-300 bg-sky-50 text-sky-700">
+            Preferred: {recommended}
+          </span>
+        ) : null}
+      </div>
+
+      {options.length ? (
+        <div className="grid md:grid-cols-2 gap-3">
+          {options.map((opt) => (
+            <div key={opt.label} className="border rounded-lg p-3 bg-slate-50 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="font-semibold text-sm">{opt.label}</div>
+                {recommended === opt.label ? (
+                  <span className="text-[11px] uppercase tracking-wide text-sky-700">Recommended</span>
+                ) : null}
+              </div>
+              {opt.summary ? <p className="text-sm text-slate-800">{opt.summary}</p> : null}
+              {opt.offer ? (
+                <div className="text-xs text-slate-600">
+                  {opt.offer.cashback != null ? `Cashback: $${opt.offer.cashback}` : null}
+                  {opt.offer.major_prizes != null ? ` • Majors: ${opt.offer.major_prizes}` : null}
+                </div>
+              ) : null}
+              {opt.hooks?.length ? (
+                <div className="text-xs">
+                  <span className="uppercase tracking-wide text-[10px] text-slate-500">Hooks</span>
+                  <ul className="list-disc pl-4 mt-1 space-y-1">
+                    {opt.hooks.slice(0, 3).map((hook, idx) => (
+                      <li key={`${opt.label}-hook-${idx}`} className="text-slate-800">{hook}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {opt.trade_incentive ? (
+                <div className="text-xs text-slate-700">
+                  <span className="uppercase tracking-wide text-[10px] text-slate-500">Trade</span>
+                  <p>{opt.trade_incentive}</p>
+                </div>
+              ) : null}
+              {opt.hero_overlay ? (
+                <div className="text-xs text-slate-700">
+                  <span className="uppercase tracking-wide text-[10px] text-slate-500">Hero overlay</span>
+                  <p>{opt.hero_overlay}</p>
+                </div>
+              ) : null}
+              {Array.isArray(opt.runner_up_prizes) && opt.runner_up_prizes.length ? (
+                <div className="text-xs text-slate-700">
+                  <span className="uppercase tracking-wide text-[10px] text-slate-500">Runner-ups</span>
+                  <ul className="list-disc pl-4 mt-1 space-y-1">
+                    {opt.runner_up_prizes.map((rp, rpIdx) => (
+                      <li key={`${opt.label}-runner-${rpIdx}`}>
+                        {rp.count != null ? `${rp.count} × ` : ''}
+                        {rp.value != null ? `$${rp.value}` : ''}
+                        {rp.description ? ` ${rp.description}` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {opt.mechanic ? (
+                <div className="text-xs text-slate-700">
+                  <span className="uppercase tracking-wide text-[10px] text-slate-500">Mechanic</span>
+                  <p>{opt.mechanic}</p>
+                </div>
+              ) : null}
+              {opt.why_this?.length ? (
+                <ul className="list-disc pl-4 text-xs text-slate-700 space-y-1">
+                  {opt.why_this.slice(0, 3).map((line, idx) => (
+                    <li key={`${opt.label}-why-${idx}`}>{line}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {agentBlocks.length ? (
+        <div className="grid md:grid-cols-2 gap-3">
+          {agentBlocks.map((agent, idx) => (
+            <div key={`improve-agent-${agent.agent || idx}`} className="border rounded p-3 bg-slate-50 space-y-1">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                {agent.agent || 'Agent'}
+              </div>
+              {Array.isArray(agent.must_fix) && agent.must_fix.length ? (
+                <ul className="list-disc pl-4 text-sm text-slate-800 space-y-1">
+                  {agent.must_fix.slice(0, 3).map((item, fixIdx) => (
+                    <li key={`${agent.agent}-fix-${fixIdx}`}>{item}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-slate-600">No must-fix items returned.</p>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 // —— New UI bits ——
 
 function VerdictBadge({ verdict }) {
@@ -2084,6 +3113,76 @@ function StatusPill({ status }) {
   return <span className={`inline-block text-[11px] px-2 py-0.5 rounded border ${map[s] || map.NA}`}>{s}</span>
 }
 
+function BuilderDiagnosticsPanel({ atAGlance, dealbreakers, offerIQ, winsense, tradeOpportunity, tradeSummary, hasHighTrade }) {
+  const hasDiagnostics =
+    (Array.isArray(atAGlance) && atAGlance.length > 0) ||
+    (Array.isArray(dealbreakers) && dealbreakers.length > 0) ||
+    Boolean(offerIQ) ||
+    Boolean(winsense) ||
+    Boolean(hasHighTrade) ||
+    Boolean(tradeOpportunity?.flag)
+  return (
+    <div className="space-y-4">
+      <div className="border rounded p-3 bg-white">
+        <div className="text-sm font-medium mb-2">Live diagnostics</div>
+        {Array.isArray(atAGlance) && atAGlance.length ? (
+          <div className="space-y-1">
+            {atAGlance.slice(0, 4).map((item) => (
+              <div key={item.key} className="flex items-center justify-between text-xs">
+                <span className="text-gray-700">{item.label}</span>
+                <StatusPill status={item.status} />
+              </div>
+            ))}
+            {atAGlance.length > 4 ? (
+              <div className="text-[11px] text-gray-500">Full scoreboard lives in Evaluation.</div>
+            ) : null}
+          </div>
+        ) : (
+          <div className="text-xs text-gray-500">Run Evaluation to populate the scoreboard cues.</div>
+        )}
+      </div>
+      {Array.isArray(dealbreakers) && dealbreakers.length ? (
+        <div className="border rounded p-3 bg-white">
+          <div className="text-sm font-medium mb-1">Dealbreakers</div>
+          <ul className="list-disc pl-5 space-y-1 text-xs text-red-700">
+            {dealbreakers.slice(0, 3).map((d, i) => (
+              <li key={i}>{d}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {offerIQ ? <OfferIQPanel offerIQ={offerIQ} /> : null}
+      {winsense ? <WinSensePanel winsense={winsense} /> : null}
+      {hasHighTrade ? (
+        <div className="border rounded p-3 bg-white">
+          <div className="text-sm font-medium mb-1">Trade plan (HIGH)</div>
+          <p className="text-xs text-gray-600 mb-1">Full plan lives in Evaluation; keep an eye on this barrier:</p>
+          {Array.isArray(tradeSummary) && tradeSummary.length ? (
+            <div className="text-xs text-gray-700">
+              <strong>{tradeSummary[0]?.barrier || 'Barrier'}</strong>: {tradeSummary[0]?.incentive || '—'}
+            </div>
+          ) : (
+            <div className="text-xs text-gray-500">No rows provided yet.</div>
+          )}
+        </div>
+      ) : tradeOpportunity?.flag ? (
+        <div className="border rounded p-3 bg-white">
+          <div className="text-sm font-medium text-amber-800 mb-1">Trade opportunity</div>
+          <p className="text-xs text-gray-700">{tradeOpportunity.why}</p>
+          {tradeOpportunity.suggestion ? (
+            <p className="text-[11px] text-gray-500 mt-1">{tradeOpportunity.suggestion}</p>
+          ) : null}
+        </div>
+      ) : null}
+      {!hasDiagnostics && (
+        <div className="border rounded p-3 bg-slate-50 text-xs text-gray-500">
+          Save & run an Evaluation to see OfferIQ, winnability, and trade cues alongside the builder.
+        </div>
+      )}
+    </div>
+  )
+}
+
 function OfferIQPanel({ offerIQ }) {
   const verdict = offerIQ?.verdict
   const confidence = typeof offerIQ?.confidence === 'number' ? Math.round(offerIQ.confidence * 100) : null
@@ -2121,6 +3220,57 @@ function OfferIQPanel({ offerIQ }) {
         </div>
       )}
     </div>
+  )
+}
+
+function WinSensePanel({ winsense }) {
+  if (!winsense) return null
+  const dims = winsense.dimensions || {}
+  const entries = [
+    { key: 'frequency', label: 'Frequency', data: dims.frequency },
+    { key: 'tiering', label: 'Tiering', data: dims.tiering },
+    { key: 'cash', label: 'Value', data: dims.cash },
+    { key: 'progress', label: 'Progress', data: dims.progress },
+    { key: 'cadence', label: 'Cadence', data: dims.cadence },
+  ]
+  const density = typeof winsense.winnerDensityPerDay === 'number' ? winsense.winnerDensityPerDay : null
+  return (
+    <div className="border rounded p-3 bg-white">
+      <div className="text-sm font-medium mb-1">Felt winnability</div>
+      <div className="flex items-center gap-2 text-xs mb-2">
+        <span>Overall:</span>
+        <WinSenseBadge status={winsense.overallStatus} />
+        {density != null ? (
+          <span className="text-gray-500">{density.toFixed(1)} winners/day</span>
+        ) : null}
+      </div>
+      <div className="space-y-1">
+        {entries.map(({ key, label, data }) => (
+          <div key={key} className="flex items-start justify-between gap-2 text-xs">
+            <div className="flex-1 text-gray-700">
+              <span className="font-medium">{label}</span>
+              {data?.summary ? <span className="block text-gray-600">{data.summary}</span> : null}
+            </div>
+            <WinSenseBadge status={data?.status} />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function WinSenseBadge({ status }) {
+  const code = String(status || 'UNKNOWN').toUpperCase()
+  const map = {
+    STRONG: 'bg-green-100 text-green-800 border-green-200',
+    OK: 'bg-amber-100 text-amber-900 border-amber-200',
+    WEAK: 'bg-red-100 text-red-800 border-red-200',
+    UNKNOWN: 'bg-gray-100 text-gray-800 border-gray-200',
+  }
+  return (
+    <span className={`inline-flex items-center text-[10px] px-2 py-0.5 rounded border ${map[code] || map.UNKNOWN}`}>
+      {code}
+    </span>
   )
 }
 
@@ -2487,3 +3637,7 @@ function TradeTable({ rows }) {
     </div>
   )
 }
+  const makeId = () =>
+    typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `builder-${Date.now()}-${Math.random().toString(16).slice(2)}`

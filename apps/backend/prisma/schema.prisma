@@ -218,6 +218,23 @@ model CampaignMemory {
   @@index([createdAt])
 }
 
+model BrandKnowledge {
+  id           String   @id @default(cuid())
+  brand        String
+  market       String   @default("GLOBAL")
+  slug         String   @unique
+  dossier      Json
+  sourceModel  String?
+  prompt       String?
+  rawResponse  Json?
+  status       String   @default("READY")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([brand])
+  @@index([market])
+}
+
 model PlaybookSnippet {
   id         String   @id @default(cuid())
   promoType  String

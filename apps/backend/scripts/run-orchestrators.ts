@@ -10,7 +10,7 @@ import { runIdeation } from '../src/lib/orchestrator/ideation.js'
 import { applyResearchOverrides, readResearchOverridesFromBrief } from '../src/lib/war-room-research.js'
 
 type Stage = 'framing' | 'ideation' | 'evaluate' | 'strategist' | 'synthesis'
-const STAGE_ORDER: Stage[] = ['framing', 'ideation', 'evaluate', 'strategist', 'synthesis']
+const STAGE_ORDER: Stage[] = ['framing', 'evaluate']
 
 function parseMaybeJson(value: any): any {
   if (!value) return null
