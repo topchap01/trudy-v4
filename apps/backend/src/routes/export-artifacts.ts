@@ -7,7 +7,7 @@ import puppeteer from 'puppeteer'
 import { prisma } from '../db/prisma.js'
 import { runJudge } from '../lib/orchestrator/judge.js'
 import { collectExportSnapshot } from '../export/snapshot.js'
-import { renderExportHtml } from '../export/render-html.js'
+import { renderClientDeck } from '../export/render-html.js'
 import type { SummaryModel } from '../export/render-html.js'
 import { writeCampaignMemory } from '../lib/memory-store.js'
 import type { ExportOptions } from '../export/types.js'
@@ -68,7 +68,7 @@ router.post('/campaigns/:id/exports', async (req, res, next) => {
     })
 
     const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19)
-    let { html, title, model } = renderExportHtml(snapshot, {
+    let { html, title, model } = renderClientDeck(snapshot, {
       sections,
       theme,
       judgeVerdict,
@@ -204,7 +204,7 @@ router.get('/exports/docx', async (req, res, next) => {
     })
 
     const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19)
-    const { model, title } = renderExportHtml(snapshot, {
+    const { model, title } = renderSnapshot(snapshot, {
       sections: sections || {},
       theme: {},
       judgeVerdict,
@@ -273,7 +273,7 @@ router.get('/exports/pdf', async (req, res, next) => {
     })
 
     const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19)
-    let { html, title, model } = renderExportHtml(snapshot, {
+    let { html, title, model } = renderSnapshot(snapshot, {
       sections: sections || {},
       theme: {},
       judgeVerdict,

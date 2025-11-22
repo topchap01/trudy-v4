@@ -38,6 +38,9 @@ export type OfferIQ = {
     coverageRate?: number | null
     cadenceSignals?: boolean
     symbolicSignals?: boolean
+    prizePoolEstimate?: number | null
+    budgetNote?: string | null
+    prizeBudgetRatio?: number | null
     // — not typed, but kept inside diagnostics narrative:
     //   headlineMax?: number
     //   banded?: boolean
@@ -60,6 +63,27 @@ const uniq = <T,>(xs: T[]) => Array.from(new Set(xs))
 function includesAny(hay: string, needles: string[]) {
   const h = lower(hay)
   return needles.some((n) => h.includes(lower(n)))
+}
+
+function parseCountFromPrize(text: string): number {
+  if (!text) return 1
+  const explicit = text.match(/(\d[\d,]*)\s*[×x]/i)
+  if (explicit) return asNum(explicit[1].replace(/,/g, ''))
+  const tokens = text.split(/[\s,]+/)
+  for (const token of tokens) {
+    if (!token) continue
+    if (/^\$/.test(token)) continue
+    if (/^\d[\d,]*$/.test(token)) return asNum(token.replace(/,/g, ''))
+  }
+  return 1
+}
+
+function parseValueFromText(text: string): number | null {
+  const match = text.match(/\$ ?([\d,]+(?:\.\d+)?)/)
+  if (match) {
+    return Number(match[1].replace(/,/g, ''))
+  }
+  return null
 }
 
 /** Category heuristics (can be expanded / learned later). */
@@ -245,12 +269,29 @@ function extract(ctx: CampaignContext) {
     null
 
   const heroCount = asNum(b.heroPrizeCount)
-  const runnerUps = Array.isArray(b.runnerUps) ? b.runnerUps : []
-  const ruCount = runnerUps.reduce((acc: number, s: any) => {
-    const m = /x\s*(\d+)/i.exec(String(s))
-    return acc + (m ? asNum(m[1]) : 1)
-  }, 0)
+  const heroValueHint = asNum(b.heroPrizeValue) || parseValueFromText(String(b.heroPrize || '')) || 0
+  const runnerUpsRaw = Array.isArray(b.runnerUps) ? b.runnerUps : []
+  const ruDetails = runnerUpsRaw.map((item: any) => {
+    const text = String(item || '')
+    const count = parseCountFromPrize(text)
+    const value = parseValueFromText(text)
+    return { count, value }
+  })
+  const ruCount = ruDetails.reduce((sum: number, r: { count: number }) => sum + r.count, 0)
   const totalWinners = (heroCount || 0) + (ruCount || 0) || (asNum(b.totalWinners) || null)
+  const fallbackRunnerValue = asNum(b.runnerUpValue) || asNum(b.runnerUpAmount) || parseValueFromText(String(b.prizeValueHint || '')) || 0
+  const ruValueTotal = ruDetails.reduce((sum: number, r: { count: number; value: number | null }) => sum + r.count * (r.value || fallbackRunnerValue), 0)
+  const heroValueTotal = (heroCount || 0) * heroValueHint
+  const prizePoolEstimateRaw = heroValueTotal + ruValueTotal
+  const prizePoolEstimate =
+    prizePoolEstimateRaw > 0
+      ? prizePoolEstimateRaw
+      : asNum(b.prizeBudgetNotes?.match(/\$[\d,]+/)?.[0]?.replace(/[^0-9.]/g, '')) || null
+  const approxRevenue = expectedBuyers ? expectedBuyers * asp : null
+  const prizeBudgetRatio =
+    prizePoolEstimate && approxRevenue && approxRevenue > 0
+      ? prizePoolEstimate / approxRevenue
+      : null
 
   const coverageRate =
     expectedBuyers && totalWinners ? totalWinners / expectedBuyers : null
@@ -284,6 +325,8 @@ function extract(ctx: CampaignContext) {
     expectedBuyers,
     totalWinners,
     coverageRate,
+    prizePoolEstimate: prizePoolEstimate || null,
+    prizeBudgetRatio: prizeBudgetRatio || null,
     // Research surfaces for scoring
     researchBenchmarks: benchmarks,
     cbBench,
@@ -304,7 +347,8 @@ export function scoreOffer(ctx: CampaignContext): OfferIQ {
     cadenceSignals, symbolicSignals,
     expectedBuyers, totalWinners, coverageRate,
     // research
-    researchBenchmarks, cbBench, heroBenchMedian, heroBenchMode, cadenceShare, manyWinnersShare, heroCount
+    researchBenchmarks, cbBench, heroBenchMedian, heroBenchMode, cadenceShare, manyWinnersShare, heroCount,
+    prizePoolEstimate, prizeBudgetRatio
   } = extract(ctx)
 
   const percentRep = pct(repAmount, asp)
@@ -410,8 +454,12 @@ export function scoreOffer(ctx: CampaignContext): OfferIQ {
         adequacyScore -= 0.2
       }
 
+      const poolLine = prizePoolEstimate
+        ? ` Prize pool ≈ $${Math.round(prizePoolEstimate).toLocaleString('en-US')}${prizeBudgetRatio != null ? ` (~${(prizeBudgetRatio * 100).toFixed(1)}% of ASP × entries)` : ''}.`
+        : ''
       adequacyWhy =
         `Coverage ≈ ${(cov * 100).toFixed(2)}% (${totalWinners} winners on ~${expectedBuyers} buyers/entries).` +
+        poolLine +
         (cadenceSignals ? ' Visible cadence/many-winners cues present.' : ' Cadence not clearly visible.') +
         (heroVsMarket !== 'UNKNOWN' ? ` Hero prizes vs market: ${heroVsMarket.toLowerCase().replace('_',' ')}.` : '')
 
@@ -573,6 +621,11 @@ export function scoreOffer(ctx: CampaignContext): OfferIQ {
     if (!cadenceSignals && cadenceShare && (cadenceShare.instant >= 0.25 || cadenceShare.weekly >= 0.3)) {
       recs.push('Add visible cadence (instant or weekly) to match in-market fairness signals.')
     }
+    if (prizeBudgetRatio != null && prizeBudgetRatio > 0.12) {
+      recs.push('Prize budget is heavy (>12% of projected retail). Sense-check ROI or add spend thresholds before funding 2,000+ prizes.')
+    } else if (prizeBudgetRatio != null && prizeBudgetRatio < 0.005) {
+      recs.push('Prize spend is under 0.5% of projected retail; consider adding a small guaranteed element or more winners.')
+    }
   }
 
   const recommendations = uniq([
@@ -617,6 +670,11 @@ export function scoreOffer(ctx: CampaignContext): OfferIQ {
       coverageRate,
       cadenceSignals,
       symbolicSignals,
+      prizePoolEstimate: prizePoolEstimate || null,
+      prizeBudgetRatio: prizeBudgetRatio || null,
+      budgetNote: prizePoolEstimate && totalWinners
+        ? `Approx prize pool $${Math.round(prizePoolEstimate).toLocaleString('en-US')} covering ${totalWinners} winners${prizeBudgetRatio ? ` (~${(prizeBudgetRatio * 100).toFixed(1)}% of retail at ASP × entries)` : ''}.`
+        : undefined,
       // non-typed notes (still accessible to your UI if needed)
       // @ts-ignore
       headlineMax,

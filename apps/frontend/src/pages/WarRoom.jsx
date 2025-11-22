@@ -19,6 +19,7 @@ import {
   runJudge,
   updateWarRoomPrefs,
   updateResearchOverrides,
+  saveBriefQAResponse,
   askAnalyst,
   runResearchTask,
   getVariants,
@@ -92,6 +93,21 @@ function buildOverridesPayload(draft) {
   return payload
 }
 
+function responsesArrayToMap(responses) {
+  const map = {}
+  if (Array.isArray(responses)) {
+    for (const entry of responses) {
+      if (!entry || !entry.issueId) continue
+      map[entry.issueId] = {
+        issueId: entry.issueId,
+        response: entry.response || '',
+        resolvedAt: entry.resolvedAt || null,
+      }
+    }
+  }
+  return map
+}
+
 export default function WarRoom() {
   const { id } = useParams()
   const { search } = useLocation()
@@ -139,6 +155,11 @@ export default function WarRoom() {
   const [researchTaskGeneratedAt, setResearchTaskGeneratedAt] = useState(null)
   const [researchTaskLoading, setResearchTaskLoading] = useState(false)
   const [researchTaskError, setResearchTaskError] = useState('')
+  const [briefQA, setBriefQA] = useState(null)
+  const [briefQALoading, setBriefQALoading] = useState(true)
+  const [briefQAResponses, setBriefQAResponses] = useState({})
+  const [briefQAResponseDrafts, setBriefQAResponseDrafts] = useState({})
+  const [briefQAResponseSaving, setBriefQAResponseSaving] = useState({})
 
   const [variants, setVariants] = useState([])
   const [variantsLoading, setVariantsLoading] = useState(false)
@@ -163,6 +184,18 @@ export default function WarRoom() {
   const [sandboxNotes, setSandboxNotes] = useState('')
   const [variantTab, setVariantTab] = useState('list')
   const sandboxHasCards = useMemo(() => workspaceHasEntries(sandboxWorkspace), [sandboxWorkspace])
+  const qaStatusClass = (status) => {
+    switch ((status || '').toUpperCase()) {
+      case 'BLOCKER':
+        return 'bg-red-100 text-red-800 border border-red-200'
+      case 'WARN':
+        return 'bg-amber-100 text-amber-800 border border-amber-200'
+      case 'PASS':
+        return 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+      default:
+        return 'bg-slate-100 text-slate-800 border border-slate-200'
+    }
+  }
 
   // Busy flags
   const [loadingFraming, setLoadingFraming] = useState(false)
@@ -384,6 +417,31 @@ export default function WarRoom() {
     }
   }
 
+  async function handleSaveQAResponse(issueId) {
+    if (!id || !issueId) return
+    const value = briefQAResponseDrafts[issueId] ?? ''
+    setBriefQAResponseSaving((prev) => ({ ...prev, [issueId]: true }))
+    try {
+      const payload = await saveBriefQAResponse(id, issueId, value)
+      const resolution = payload?.resolution ?? null
+      setBriefQAResponses((prev) => {
+        const next = { ...prev }
+        if (resolution) next[issueId] = resolution
+        else delete next[issueId]
+        return next
+      })
+      setBriefQAResponseDrafts((prev) => ({
+        ...prev,
+        [issueId]: resolution ? resolution.response : '',
+      }))
+    } catch (err) {
+      console.error('Failed to save QA response', err)
+      alert(err?.message || 'Failed to save QA response')
+    } finally {
+      setBriefQAResponseSaving((prev) => ({ ...prev, [issueId]: false }))
+    }
+  }
+
   async function reload() {
     const c = await getCampaign(id)
     setCampaign(c)
@@ -392,6 +450,28 @@ export default function WarRoom() {
     const briefObj = b?.brief ?? b ?? null
     setBrief(briefObj)
     await loadVariantsList()
+
+    setBriefQALoading(true)
+    let qaReview = null
+    let qaResponses = []
+    try {
+      const qaRes = await fetch(`/api/campaigns/${id}/brief/qa`)
+      if (qaRes.ok) {
+        const payload = await qaRes.json()
+        qaReview = payload?.review || null
+        qaResponses = Array.isArray(payload?.responses) ? payload.responses : []
+      }
+    } catch {
+      qaReview = null
+    } finally {
+      setBriefQA(qaReview)
+      const map = responsesArrayToMap(qaResponses)
+      setBriefQAResponses(map)
+      setBriefQAResponseDrafts(
+        Object.fromEntries(Object.entries(map).map(([issueId, entry]) => [issueId, entry.response || ''])),
+      )
+      setBriefQALoading(false)
+    }
 
     let warRoomData = null
     try {
@@ -1317,6 +1397,90 @@ export default function WarRoom() {
 
         {/* Main content */}
         <div className="px-6 pb-8">
+          {/* Brief QA */}
+          <section className="mb-10">
+            <SectionHead
+              title="Brief QA"
+              metaRight={briefQA?.createdAt ? `Last run: ${new Date(briefQA.createdAt).toLocaleString()}` : ''}
+            />
+            <div className="card">
+              {briefQALoading ? (
+                <div className="text-sm text-gray-600">Checking brief…</div>
+              ) : briefQA ? (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className={`px-2 py-0.5 rounded text-xs font-semibold ${qaStatusClass(briefQA.overall_status)}`}>
+                      {briefQA.overall_status || 'WARN'}
+                    </span>
+                    <span className="text-sm text-gray-700">{briefQA.summary || 'QA run complete.'}</span>
+                  </div>
+                  {Array.isArray(briefQA.issues) && briefQA.issues.length ? (
+                    <ul className="space-y-3">
+                      {briefQA.issues.map((issue) => {
+                        const key = issue?.id || `${issue?.field}-${issue?.details}`
+                        const resolution = issue?.id ? briefQAResponses[issue.id] : null
+                        const draftValue = issue?.id ? briefQAResponseDrafts[issue.id] ?? '' : ''
+                        const saving = issue?.id ? briefQAResponseSaving[issue.id] : false
+                        return (
+                          <li key={key} className="border border-slate-200 rounded p-3 space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className={`px-2 py-0.5 rounded text-xs font-semibold ${qaStatusClass(issue.severity)}`}>
+                                {issue.severity}
+                              </span>
+                              <span className="font-semibold text-sm text-slate-800">{issue.field || 'Unspecified field'}</span>
+                              {issue?.id ? (
+                                <span className="text-[11px] text-gray-400">#{issue.id.slice(0, 6)}</span>
+                              ) : null}
+                            </div>
+                            <div className="text-sm text-gray-700">{issue.details || 'No details provided.'}</div>
+                            {issue.fix ? <div className="text-xs text-gray-500">Fix: {issue.fix}</div> : null}
+                            {issue?.id ? (
+                              <div className="pt-2 border-t border-dashed border-slate-200">
+                                <label className="text-xs font-semibold text-slate-600 mb-1 block">
+                                  Your response {resolution?.resolvedAt ? `(updated ${new Date(resolution.resolvedAt).toLocaleString()})` : ''}
+                                </label>
+                                <textarea
+                                  className="w-full border rounded px-2 py-1 text-sm focus:ring-1 focus:ring-slate-400"
+                                  rows={3}
+                                  value={draftValue}
+                                  onChange={(e) =>
+                                    setBriefQAResponseDrafts((prev) => ({ ...prev, [issue.id]: e.target.value }))
+                                  }
+                                  placeholder="Explain how this is addressed or why it is acceptable."
+                                />
+                                <div className="mt-2 flex flex-wrap items-center gap-3">
+                                  <Button
+                                    disabled={saving}
+                                    loading={saving}
+                                    className="px-2 py-1 text-xs"
+                                    onClick={() => handleSaveQAResponse(issue.id)}
+                                  >
+                                    Save response
+                                  </Button>
+                                  {resolution?.response ? (
+                                    <span className="text-xs text-emerald-700">Saved</span>
+                                  ) : (
+                                    <span className="text-xs text-gray-500">Not saved yet</span>
+                                  )}
+                                </div>
+                              </div>
+                            ) : null}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  ) : (
+                    <div className="text-sm text-gray-600">No issues flagged.</div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-sm text-gray-600">
+                  No QA run recorded yet. Run the brief QA script or auto-review to generate findings.
+                </div>
+              )}
+            </div>
+          </section>
+
           {/* Guidance */}
           <section className="mb-10">
             <SectionHead title="Guidance" metaRight={savingPrefs ? 'Saving…' : ''} />
@@ -2439,29 +2603,33 @@ export default function WarRoom() {
         </div>
       </section>
 
-          {/* Export */}
-          <section ref={exportRef} className="mb-10">
-            <SectionHead title="Export" />
-            <div className="card">
-              {/* Single export surface: handled entirely inside ExportPanel */}
-              <ExportPanel artifacts={exports} onExport={doExport} />
-            </div>
-          </section>
+      {/* Ask for Outputs */}
+      <section className="mb-10">
+        <SectionHead title="Ask for Outputs" />
+        <div className="card">
+          <AskOutputs campaignId={id} onSaved={reload} />
+        </div>
+      </section>
+
+      {/* Saved Outputs */}
+      <section className="mb-10">
+        <SectionHead title="Saved Outputs" />
+        <div className="card">
+          <SavedOutputsPanel campaignId={id} />
+        </div>
+      </section>
+
+      {/* Export */}
+      <section ref={exportRef} className="mb-10">
+        <SectionHead title="Export" />
+        <div className="card">
+          {/* Single export surface: handled entirely inside ExportPanel */}
+          <ExportPanel artifacts={exports} onExport={doExport} />
+        </div>
+      </section>
 
         </div>
       </div>
-
-      {/* Aside */}
-      <aside className="w-[420px] border-l p-4 overflow-y-auto space-y-6">
-        <div>
-          <h3 className="text-lg font-semibold mb-2">Ask for Outputs</h3>
-        <AskOutputs campaignId={id} onSaved={reload} />
-        </div>
-        <div>
-          <h3 className="text-lg font-semibold mb-2">Saved Outputs</h3>
-          <SavedOutputsPanel campaignId={id} />
-        </div>
-      </aside>
     </div>
   )
 }

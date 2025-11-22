@@ -110,6 +110,21 @@ const SEGUE_PREFIX_REGEX =
     : new RegExp('^(\\d+\\.|\\(?\\d+\\)|[A-Z]\\))\\b', 'i')
 const SEGUE_PUNCTUATION_REGEX = /^[\\s,.;:—–-]+/
 
+function toNumber(value: any): number | null {
+  if (value == null) return null
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return null
+    const cleaned = trimmed.replace(/[, ]+/g, '')
+    const direct = Number(cleaned)
+    if (Number.isFinite(direct)) return direct
+    const match = trimmed.match(/-?\d+(?:\.\d+)?/)
+    return match ? Number(match[0]) : null
+  }
+  return null
+}
+
 export function renderExportHtml(snapshot: SnapshotRich, opts: RenderOptionsRuntime) {
   const model = buildSummaryModel(snapshot, opts)
   const html = buildHtmlDocument(model)
@@ -120,6 +135,618 @@ export function renderExportHtml(snapshot: SnapshotRich, opts: RenderOptionsRunt
     model,
   }
 }
+
+type Archetype =
+  | 'VALUE_LED_HERO'
+  | 'GWP_ONLY'
+  | 'PRIZE_LADDER'
+  | 'IP_PROMO'
+  | 'FINANCE_ASSURED'
+
+export function renderClientDeck(snapshot: SnapshotRich, opts: RenderOptionsRuntime) {
+  const spec = snapshot.context?.briefSpec || {}
+  const evaluationMeta = snapshot.narratives.evaluation?.meta || snapshot.evaluationMeta || {}
+  const detectedArchetype = detectArchetype(spec, evaluationMeta)
+  const archetype = normalizeArchetype(detectedArchetype, evaluationMeta)
+  const upgradeRaw = pickRecommendedUpgradeOption(evaluationMeta?.multiAgentImprovement)
+  const upgradeOption = normalizeUpgradeOption(
+    upgradeRaw ? enforceSimpleLadderOption(upgradeRaw, evaluationMeta, spec) : null,
+    spec
+  )
+  const brand = preferredBrand(snapshot.context) || snapshot.campaign.clientName || snapshot.campaign.title
+  const title = `${brand} — ${snapshot.campaign.title}`
+  const verdict = opts.judgeVerdict?.verdict || snapshot.offerIQ?.verdict || 'REVIEW'
+  const timestamp = opts.timestamp || new Date().toISOString()
+  const misaligned = buildMustFixList(evaluationMeta, archetype, spec)
+  const changeSummary = buildChangeSummary(evaluationMeta, spec, archetype, upgradeOption)
+  const runThisParagraph = buildRunThisParagraph(spec, evaluationMeta, archetype, upgradeOption)
+  const pageStyles = `
+  <style>
+    :root{
+      --bg:#f3f4f8;
+      --page:#ffffff;
+      --ink:#0f172a;
+      --muted:#5b6475;
+      --card:#f7f9fc;
+      --border:rgba(15,23,42,0.08);
+      --accent:${opts.theme?.accent || '#0ea5e9'};
+    }
+    body{
+      font-family:"IBM Plex Sans","Inter","Segoe UI",sans-serif;
+      background:var(--bg);
+      color:var(--ink);
+      margin:0;
+      padding:48px 20px;
+      line-height:1.55;
+    }
+    .deck{max-width:960px;margin:0 auto;}
+    .page{
+      background:var(--page);
+      border-radius:28px;
+      padding:36px 40px;
+      margin-bottom:32px;
+      box-shadow:0 35px 70px rgba(15,23,42,0.08);
+    }
+    h1{margin:0;font-size:30px;font-weight:600;}
+    h2{margin:0 0 12px;font-size:24px;font-weight:600;}
+    h3{
+      margin:28px 0 8px;
+      font-size:15px;
+      letter-spacing:0.12em;
+      text-transform:uppercase;
+      color:var(--muted);
+    }
+    ul{padding-left:20px;margin:8px 0;}
+    li+li{margin-top:4px;}
+    .badge{
+      display:inline-flex;
+      align-items:center;
+      border-radius:999px;
+      border:1px solid rgba(15,23,42,0.15);
+      padding:4px 14px;
+      font-size:12px;
+      letter-spacing:0.08em;
+      text-transform:uppercase;
+      margin-top:12px;
+      background:rgba(14,165,233,0.08);
+    }
+    .badge--go{border-color:#10b981;color:#047857;background:rgba(16,185,129,0.12);}
+    .badge--iterate{border-color:#f97316;color:#9a3412;background:rgba(249,115,22,0.12);}
+    .badge--review{border-color:#facc15;color:#854d0e;background:rgba(250,204,21,0.12);}
+    .meta-row{display:flex;justify-content:space-between;color:var(--muted);font-size:13px;margin-bottom:12px;}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px;}
+    .card{
+      border:1px solid var(--border);
+      border-radius:18px;
+      padding:18px;
+      background:var(--card);
+    }
+    .card h3:first-child{margin-top:0;}
+    .comparison{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px;margin-top:28px;}
+    .room-callout{
+      border:1px solid rgba(15,23,42,0.12);
+      border-radius:22px;
+      padding:22px;
+      background:#fff8f2;
+      margin-bottom:22px;
+    }
+    .room-lists{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-top:24px;}
+    .room-list-card ul{padding-left:18px;margin:0;}
+    .appendix details{
+      border:1px solid var(--border);
+      border-radius:18px;
+      margin-bottom:12px;
+      background:var(--card);
+    }
+    .appendix summary{
+      cursor:pointer;
+      padding:14px 18px;
+      font-weight:600;
+      list-style:none;
+    }
+    .appendix summary::-webkit-details-marker{display:none;}
+    .appendix details[open] summary{border-bottom:1px solid var(--border);}
+    .appendix .appendix-body{padding:18px;}
+  </style>`
+  const verdictPage = `
+    <section class="page page--verdict">
+      <div class="meta-row"><span>${timestamp}</span><span>${escapeHtml(snapshot.context?.market || '')}</span></div>
+      <h1>${escapeHtml(title)}</h1>
+      <div class="badge badge--${escapeHtml(String(verdict).toLowerCase())}">Trudy verdict — ${escapeHtml(String(verdict))}</div>
+      <p>${escapeHtml(runThisParagraph)}</p>
+      <h3>What’s misaligned</h3>
+      ${renderListOrParagraph(misaligned)}
+      <h3>What Trudy changed</h3>
+      ${renderListOrParagraph(changeSummary.after, changeSummary.before)}
+      <h3>Run this</h3>
+      <p>${escapeHtml(buildRecommendationLine(spec, evaluationMeta, archetype, upgradeOption))}</p>
+    </section>
+  `
+  const mechanicSteps = upgradeOption?.mechanic
+    ? buildMechanicStepsFromText(upgradeOption.mechanic)
+    : buildMechanicSteps(evaluationMeta, spec)
+  const hooksList = buildHookList(snapshot, spec, archetype, upgradeOption)
+  const brandHost = buildBrandHostLine(spec, brand)
+  const beforeAfterHtml = buildBeforeAfterComparison(spec, evaluationMeta, archetype, upgradeOption)
+  const promoPage = `
+    <section class="page page--plan">
+      <h2>Recommended Promotion</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Value story</h3>
+          <p>${escapeHtml(summarisePlanValueStory(spec, upgradeOption))}</p>
+        </div>
+        <div class="card">
+          <h3>Hero story</h3>
+          <p>${archetype === 'GWP_ONLY' ? 'No hero required — the guaranteed gift does the heavy lifting.' : escapeHtml(summariseHeroStory(spec, evaluationMeta) || 'Use the hero overlay purely as theatre.')}</p>
+        </div>
+        <div class="card">
+          <h3>Mechanic</h3>
+          <ol>${mechanicSteps.map((step) => `<li>${escapeHtml(step)}</li>`).join('')}</ol>
+        </div>
+        <div class="card">
+          <h3>Hooks & brand role</h3>
+          <ul>${hooksList.map((hook) => `<li>${escapeHtml(hook)}</li>`).join('')}</ul>
+          ${brandHost ? `<p>${escapeHtml(brandHost)}</p>` : ''}
+          <p>${escapeHtml(summariseFinanceRisk(spec, evaluationMeta) || '')}</p>
+        </div>
+      </div>
+      ${beforeAfterHtml}
+    </section>
+  `
+  const roomSummary = buildRoomSummaryCards(evaluationMeta, archetype, spec)
+  const roomPage = `
+    <section class="page page--room">
+      <h2>Inside the Trudy Room</h2>
+      <div class="room-callout">
+        <div class="badge">Room verdict — ${escapeHtml(roomSummary.verdict)}</div>
+        ${roomSummary.notes ? `<p>${escapeHtml(roomSummary.notes)}</p>` : ''}
+        ${
+          roomSummary.topReasons.length
+            ? `<ul>${roomSummary.topReasons.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>`
+            : ''
+        }
+      </div>
+      ${
+        roomSummary.cards.length
+          ? `<div class="grid">
+              ${roomSummary.cards
+                .map(
+                  (card) => `
+                    <div class="card">
+                      <h3>${escapeHtml(card.agent)}</h3>
+                      <div class="badge">${escapeHtml(card.verdict)}</div>
+                      <p>${escapeHtml(card.headline)}</p>
+                      ${
+                        card.points.length
+                          ? `<ul>${card.points.map((pt) => `<li>${escapeHtml(pt)}</li>`).join('')}</ul>`
+                          : ''
+                      }
+                    </div>
+                  `
+                )
+                .join('')}
+            </div>`
+          : '<p>No agent dialogue captured.</p>'
+      }
+      <div class="room-lists">
+        ${renderRoomListCard('Must-fix', roomSummary.mustFix)}
+        ${renderRoomListCard('Quick wins', roomSummary.quickWins)}
+      </div>
+    </section>
+  `
+  const appendix = renderAppendixSection(snapshot, opts)
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(
+    title
+  )}</title>${pageStyles}</head><body><div class="deck">${verdictPage}${promoPage}${roomPage}${appendix}</div></body></html>`
+
+  const timestampClean = opts.timestamp || new Date().toISOString().replace('T', ' ').slice(0, 19)
+  const chips: string[] = []
+  if (opts.judgeVerdict?.score != null) chips.push(`Judge ${opts.judgeVerdict.score}/100`)
+  if (opts.judgeVerdict?.verdict) chips.push(`Verdict ${opts.judgeVerdict.verdict}`)
+
+  const summaryModel: SummaryModel = {
+    meta: {
+      campaignId: snapshot.campaign.id,
+      campaignTitle: snapshot.campaign.title,
+      brand,
+      documentTitle: title,
+      timestamp: timestampClean,
+      accent: opts.theme?.accent || '#0ea5e9',
+      chips,
+    },
+    sections: [
+      { id: 'verdict', title: 'Trudy Verdict', html: verdictPage },
+      { id: 'plan', title: 'Recommended Promotion', html: promoPage },
+      { id: 'room', title: 'Inside the Trudy Room', html: roomPage },
+    ],
+    governance: {
+      blockers: [],
+      warnings: misaligned,
+    },
+    references: {
+      rider: snapshot.narratives?.synthesis?.raw || snapshot.narratives?.synthesis?.sanitized || null,
+    },
+    copyBlocks: [],
+  }
+
+  return { html, title, accent: opts.theme?.accent || '#0ea5e9', model: summaryModel }
+}
+
+function detectArchetype(spec: Record<string, any>, meta?: any): Archetype {
+  const rewardPosture = String(spec?.rewardPosture || '').toUpperCase()
+  const hasCashback = Boolean(spec?.cashback && hasMeaningfulCashbackPayload(spec.cashback))
+  const hasGwp = Boolean(spec?.gwp && (spec.gwp.item || spec.gwp.triggerQty != null || spec.gwp.cap))
+  const hasHero =
+    (typeof spec?.heroPrize === 'string' && spec.heroPrize.trim()) ||
+    (typeof spec?.majorPrizeOverlay === 'string' && spec.majorPrizeOverlay.trim())
+  const hasIp = Boolean(spec?.ipTieIn?.franchise)
+  const simpleLadderPreferred = Boolean(meta?.simpleLadderPreferred)
+  if (hasIp) return 'IP_PROMO'
+  if (simpleLadderPreferred && (hasCashback || hasGwp || hasHero)) return 'VALUE_LED_HERO'
+  if (hasCashback && hasHero) return 'VALUE_LED_HERO'
+  if (hasGwp && !hasHero) return 'GWP_ONLY'
+  if (rewardPosture === 'ASSURED' && hasCashback) return 'FINANCE_ASSURED'
+  return 'PRIZE_LADDER'
+}
+
+function normalizeArchetype(archetype: Archetype, meta?: any): Archetype {
+  if (archetype === 'VALUE_LED_HERO') return archetype
+  if (meta?.simpleLadderPreferred) return 'VALUE_LED_HERO'
+  return archetype
+}
+
+function renderListOrParagraph(primary: string[] = [], fallback: string[] = []) {
+  const lines = primary.filter(Boolean)
+  if (!lines.length && fallback.length) return renderListOrParagraph(fallback, [])
+  if (!lines.length) return '<p>No critical issues.</p>'
+  return `<ul>${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>`
+}
+
+function buildMustFixList(meta: any, archetype?: Archetype, spec: Record<string, any> = {}): string[] {
+  const mustFix: string[] = []
+  const bruce = meta?.multiAgentEvaluation?.bruce
+  const valueLedSpec = hasMeaningfulCashbackPayload(spec?.cashback || null) || Boolean(spec?.assuredValue || spec?.gwp)
+  const effectiveArchetype =
+    archetype === 'VALUE_LED_HERO' || meta?.simpleLadderPreferred || valueLedSpec ? 'VALUE_LED_HERO' : archetype
+  if (bruce?.must_fix_items) {
+    mustFix.push(
+      ...bruce.must_fix_items
+        .map((line: string) => scrubLineForArchetype(line, effectiveArchetype))
+        .filter(Boolean)
+    )
+  }
+  return mustFix.slice(0, 4)
+}
+
+function buildChangeSummary(meta: any, spec: Record<string, any>, archetype: Archetype, upgrade: any | null) {
+  const before: string[] = []
+  const after: string[] = []
+  before.push(`Original plan: ${summariseValueStory(spec)}`)
+  if (archetype !== 'GWP_ONLY') {
+    const heroBefore = summariseHeroStory(spec, meta)
+    if (heroBefore) before.push(`Hero overlay as briefed: ${heroBefore}`)
+  }
+  if (upgrade?.summary) {
+    after.push(upgrade.summary)
+  }
+  if (upgrade?.mechanic) {
+    after.push(`Mechanic: ${tidySentence(upgrade.mechanic)}`)
+  }
+  if (!after.length) {
+    if (archetype === 'GWP_ONLY') {
+      after.push('Recommendation: keep it a pure guaranteed gift; use pub ritual/story for theatre instead of faux cadence.')
+    } else {
+      after.push('Recommendation: tighten the value story and make the hero feel premium without clutter.')
+    }
+  }
+  return { before, after }
+}
+
+function buildRunThisParagraph(
+  spec: Record<string, any>,
+  meta: any,
+  archetype: Archetype,
+  upgrade: any | null
+): string {
+  const parts: string[] = []
+  appendUniqueLine(parts, summarisePlanValueStory(spec, upgrade))
+  appendUniqueLine(parts, archetype === 'GWP_ONLY' ? '' : summariseHeroStory(spec, meta))
+  appendUniqueLine(parts, upgrade?.mechanic || '')
+  appendUniqueLine(parts, upgrade?.summary || '')
+  appendUniqueLine(parts, summariseFinanceRisk(spec, meta))
+  return parts.join(' ')
+}
+
+function buildRecommendationLine(
+  spec: Record<string, any>,
+  meta: any,
+  archetype: Archetype,
+  upgrade: any | null
+): string {
+  const parts: string[] = []
+  appendUniqueLine(parts, summarisePlanValueStory(spec, upgrade))
+  appendUniqueLine(parts, archetype === 'GWP_ONLY' ? '' : summariseHeroStory(spec, meta))
+  appendUniqueLine(parts, upgrade?.mechanic || '')
+  appendUniqueLine(parts, upgrade?.summary || '')
+  appendUniqueLine(parts, summariseFinanceRisk(spec, meta))
+  return parts.join(' ')
+}
+
+function summariseValueStory(spec: Record<string, any>): string {
+  if (spec?.cashback && hasMeaningfulCashbackPayload(spec.cashback)) {
+    const amount = toNumber(spec.cashback.amount ?? spec.cashback.basePayout ?? null)
+    const processing =
+      spec.cashback.processingDays != null ? ` within ${spec.cashback.processingDays} days` : ''
+    if (amount) return `Every eligible purchase triggers $${Math.round(amount)} cashback${processing}.`
+    const percent = toNumber(spec.cashback.percent ?? null)
+    if (percent) return `Every eligible purchase returns ${percent}% of spend${processing}.`
+    return 'Guaranteed cashback is the base value; keep comms tight.'
+  }
+  if (spec?.gwp && (spec.gwp.item || spec.gwp.triggerQty != null)) {
+    const trigger =
+      spec.gwp.triggerQty != null ? `Buy ${spec.gwp.triggerQty}` : 'Buy the participating products'
+    return `${trigger} and receive ${spec.gwp.item || 'the guaranteed gift'} instantly.`
+  }
+  if (Array.isArray(spec?.assuredItems) && spec.assuredItems.length) {
+    return `Every entrant receives ${spec.assuredItems.join(', ')}; no raffle required.`
+  }
+  return 'Deliver clear value to every entrant; detail pending.'
+}
+
+function summarisePlanValueStory(spec: Record<string, any>, upgrade: any | null): string {
+  if (upgrade) {
+    const baseValue = describeBaseValueOption(upgrade?.base_value || upgrade?.offer?.base_value || null)
+    if (baseValue) return baseValue.endsWith('.') ? baseValue : `${baseValue}.`
+    const threshold = extractThresholdFromMechanic(upgrade?.mechanic || '')
+    if (threshold && spec?.gwp?.item) {
+      return `Buy ${threshold} and receive ${spec.gwp.item} instantly.`
+    }
+  }
+  return summariseValueStory(spec)
+}
+
+function summariseHeroStory(spec: Record<string, any>, meta: any): string {
+  const heroPrize = cleanText(spec?.heroPrize || spec?.majorPrizeOverlay || '')
+  if (heroPrize) {
+    const count = spec?.heroPrizeCount ? ` (${spec.heroPrizeCount} winners)` : ''
+    return `${heroPrize}${count}`
+  }
+  const upgrade = pickRecommendedUpgradeOption(meta?.multiAgentImprovement)
+  if (upgrade?.hero_overlay) return upgrade.hero_overlay
+  return ''
+}
+
+function summariseFinanceRisk(spec: Record<string, any>, meta: any): string {
+  if (spec?.cashback && hasMeaningfulCashbackPayload(spec.cashback)) {
+    const cap = spec.cashback.cap
+    if (!cap || String(cap).trim().toUpperCase() === 'UNLIMITED') {
+      return 'Finance note: cashback liability is open—cap claims or insure the upside.'
+    }
+  }
+  if (meta?.liabilityStatus === 'OPEN') {
+    return 'Finance note: Liability flagged as OPEN; align Finance before launch.'
+  }
+  return ''
+}
+
+function hasMeaningfulCashbackPayload(cashback: any): boolean {
+  if (!cashback || typeof cashback !== 'object') return false
+  const amount = toNumber(cashback.amount ?? cashback.basePayout ?? cashback.topPayout ?? null)
+  if (amount) return true
+  const percent = toNumber(cashback.percent ?? null)
+  if (percent) return true
+  if (cashback.cap && String(cashback.cap).trim()) return true
+  if (cashback.processingDays != null && String(cashback.processingDays).trim()) return true
+  if (typeof cashback.odds === 'string' && cashback.odds.trim().length) return true
+  if (typeof cashback.headline === 'string' && cashback.headline.trim().length) return true
+  if (Array.isArray((cashback as any).bands) && cashback.bands.length) return true
+  return false
+}
+
+function extractThresholdFromMechanic(text: string): string | null {
+  if (!text) return null
+  const match = text.match(/\bbuy\s+(\d+)/i)
+  return match ? match[1] : null
+}
+
+function scrubLineForArchetype(line: string, archetype?: Archetype): string {
+  let out = cleanText(line)
+  if (!out) return ''
+  if ((archetype === 'GWP_ONLY' || archetype === 'FINANCE_ASSURED')) {
+    if (/runner|cadence|weekly/i.test(out)) return ''
+    out = out.replace(/lower the entry threshold[^.]+/gi, '').trim()
+  }
+  if (archetype === 'VALUE_LED_HERO') {
+    if (/(add|increas)[^.]*runner/i.test(out)) return ''
+    if (/(add|increas)[^.]*hero/i.test(out)) return ''
+    if (/cadence|weekly|mass winner/i.test(out)) return ''
+  }
+  return out
+}
+
+function buildHookList(
+  snapshot: SnapshotRich,
+  spec: Record<string, any>,
+  archetype: Archetype,
+  upgrade?: any | null
+): string[] {
+  const hooks = new Set<string>()
+  if (Array.isArray(upgrade?.hooks)) {
+    upgrade.hooks.forEach((hook: string) => {
+      const clean = scrubHookLine(hook, archetype)
+      if (clean) hooks.add(clean)
+    })
+  }
+  const evaluationMeta = snapshot.narratives.evaluation?.meta || snapshot.evaluationMeta || {}
+  const evaluationHooks = evaluationMeta?.ui?.hookOptions || []
+  evaluationHooks.forEach((hook: string) => {
+    const clean = scrubHookLine(hook, archetype)
+    if (clean) hooks.add(clean)
+  })
+  if (Array.isArray(snapshot.hooksTop)) {
+    snapshot.hooksTop.forEach((hook) => {
+      const clean = scrubHookLine(hook, archetype)
+      if (clean) hooks.add(clean)
+    })
+  }
+  const cleaned = Array.from(hooks).slice(0, 3)
+  if (cleaned.length) return cleaned
+  return buildDefaultHooks(spec, archetype, evaluationMeta)
+}
+
+function scrubHookLine(line: string, archetype: Archetype): string {
+  let output = cleanText(line)
+  if (!output) return ''
+  if (
+    (archetype === 'GWP_ONLY' || archetype === 'FINANCE_ASSURED' || archetype === 'VALUE_LED_HERO') &&
+    /limited[^.]*chance/i.test(output)
+  ) {
+    return ''
+  }
+  if (/double pass/i.test(output) && !/double/i.test(output)) {
+    output = output.replace(/pass/gi, 'double pass')
+  }
+  if (output.length < 32) return ''
+  if (
+    (archetype === 'VALUE_LED_HERO' || archetype === 'FINANCE_ASSURED') &&
+    !/\b(cash|back|money|guarantee|chef|experience|draw|win|gift|receive)\b/i.test(output)
+  ) {
+    return ''
+  }
+  return output
+}
+
+function buildDefaultHooks(spec: Record<string, any>, archetype: Archetype, meta: any): string[] {
+  const hooks: string[] = []
+  const valueLine = summariseValueStory(spec)
+  if (valueLine) {
+    hooks.push(valueLine.replace(/^Every eligible purchase triggers/i, 'Get').replace(/within/i, 'inside'))
+  }
+  if (archetype !== 'GWP_ONLY') {
+    const heroLine = summariseHeroStory(spec, meta)
+    if (heroLine) hooks.push(`Plus ${heroLine} as a premium overlay.`)
+  }
+  const mechanic = cleanText(spec?.mechanicOneLiner || spec?.hook || '')
+  if (mechanic) hooks.push(mechanic)
+  return hooks.filter(Boolean).slice(0, 3)
+}
+
+function tidySentence(text: string): string {
+  if (!text) return ''
+  return text.replace(/\s+/g, ' ').trim().replace(/[.]+$/, '')
+}
+
+function appendUniqueLine(list: string[], text: string | null | undefined) {
+  const line = tidySentence(text || '')
+  if (!line) return
+  const key = line.toLowerCase()
+  if (list.some((entry) => entry.toLowerCase() === key)) return
+  list.push(line.endsWith('.') ? line : `${line}.`)
+}
+
+function buildBeforeAfterComparison(spec: Record<string, any>, meta: any, archetype: Archetype, upgrade: any | null) {
+  const beforeValue = tidySentence(summariseValueStory(spec))
+  const beforeHero = archetype === 'GWP_ONLY' ? '' : tidySentence(summariseHeroStory(spec, meta))
+  const beforeMechanic = tidySentence(cleanText(spec?.mechanicOneLiner || spec?.entryMechanic || ''))
+  const beforeLines = [
+    beforeValue ? `Base — ${beforeValue}` : null,
+    beforeHero ? `Hero overlay — ${beforeHero}.` : 'Hero overlay — none; base value carries the story.',
+    beforeMechanic ? `Mechanic — ${beforeMechanic}.` : null,
+  ].filter(Boolean)
+
+  if (!upgrade) return ''
+
+  const afterBase = tidySentence(summarisePlanValueStory(spec, upgrade))
+  const afterHero =
+    archetype === 'GWP_ONLY'
+      ? ''
+      : tidySentence(describeHeroTierFromOption(upgrade) || summariseHeroStory(spec, meta) || '')
+  const afterMechanic = tidySentence(cleanText(upgrade?.mechanic || ''))
+  const afterSummary = upgrade?.summary ? tidySentence(upgrade.summary) : ''
+  const afterLines = [
+    afterBase ? `Base — ${afterBase}.` : null,
+    afterHero ? `Hero — ${afterHero}.` : null,
+    afterMechanic ? `Mechanic — ${afterMechanic}.` : null,
+    afterSummary ? afterSummary : null,
+  ].filter(Boolean)
+
+  if (!beforeLines.length && !afterLines.length) return ''
+  return `
+    <div class="comparison">
+      <div class="card">
+        <h3>Before Trudy</h3>
+        <ul>${beforeLines.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>
+      </div>
+      <div class="card">
+        <h3>Trudy plan</h3>
+        <ul>${afterLines.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>
+      </div>
+    </div>
+  `
+}
+
+function buildRoomSummaryCards(meta: any, archetype: Archetype, spec: Record<string, any>) {
+  const room = meta?.multiAgentEvaluation || {}
+  const agents = Array.isArray(room.agents) ? room.agents : []
+  const bruce = room.bruce || {}
+  const metaForCards =
+    archetype === 'VALUE_LED_HERO' && !meta?.simpleLadderPreferred ? { ...meta, simpleLadderPreferred: true } : meta
+  let cards = agents.slice(0, 4).map((agent: any) => {
+    const headline = sanitizeDeckAgentHeadline(agent?.headline || '', metaForCards, archetype)
+    const points = scrubValueLedLines(Array.isArray(agent?.key_points) ? agent.key_points.slice(0, 3) : [], metaForCards)
+    return {
+      agent: agent?.agent || 'Agent',
+      verdict: agent?.verdict || 'ITERATE',
+      headline: headline || 'Focus on the guaranteed value; let the hero be theatre.',
+      points,
+    }
+  })
+  if (!cards.length) {
+    cards = [
+      {
+        agent: 'OfferIQ',
+        verdict: meta?.offerIQVerdict || 'ITERATE',
+        headline: 'Multi-agent evaluation not captured for this campaign.',
+        points: [],
+      },
+    ]
+  }
+  const mustFix = buildMustFixList(meta, archetype, spec)
+  const quickWins = scrubValueLedLines(
+    Array.isArray(bruce.quick_wins) ? bruce.quick_wins.slice(0, 4) : [],
+    metaForCards
+  )
+  const topReasons = scrubValueLedLines(
+    Array.isArray(bruce.top_reasons) ? bruce.top_reasons.slice(0, 3) : [],
+    metaForCards
+  )
+  const verdict = bruce.verdict || room.verdict || 'ITERATE'
+  const notes = cleanText(bruce.notes || '')
+  return { cards, mustFix, quickWins, topReasons, verdict, notes }
+}
+
+function sanitizeDeckAgentHeadline(line: string, meta: any, archetype: Archetype) {
+  const cleaned = cleanText(line)
+  if (!cleaned) return ''
+  if (archetype === 'VALUE_LED_HERO' && /(runner|cadence|weekly|more winner)/i.test(cleaned)) {
+    return 'Keep the hero overlay limited; cashback already delivers fairness.'
+  }
+  return sanitizeValueLedLine(cleaned, meta)
+}
+
+function renderRoomListCard(title: string, lines: string[]) {
+  const safeLines = (lines || []).filter(Boolean)
+  if (!safeLines.length) {
+    return `<div class="card room-list-card"><h3>${escapeHtml(title)}</h3><p>No ${escapeHtml(
+      title.toLowerCase()
+    )} captured.</p></div>`
+  }
+  return `<div class="card room-list-card"><h3>${escapeHtml(title)}</h3><ul>${safeLines
+    .map((line) => `<li>${escapeHtml(line)}</li>`)
+    .join('')}</ul></div>`
+}
+
 
 const MODE_LABELS: Record<'BRIEFED' | 'IMPROVE' | 'REBOOT', string> = {
   BRIEFED: 'Review as briefed',
@@ -160,25 +787,398 @@ function buildSummaryModel(snapshot: SnapshotRich, opts: RenderOptionsRuntime): 
 }
 
 function buildSections(snapshot: SnapshotRich, opts: RenderOptionsRuntime) {
-  if (opts.mode && MODE_LABELS[opts.mode]) {
-    return [
-      {
-        id: 'one-pager',
-        title: MODE_LABELS[opts.mode],
-        html: renderOnePager(snapshot, opts),
-      },
-    ]
-  }
-
   const sections: Array<{ id: string; title: string; html: string }> = []
   const add = (id: string, title: string, html: string) => {
     if (!html) return
     sections.push({ id, title, html })
   }
 
-  add('framing', 'Framing Snapshot', renderFramingSection(snapshot))
-  add('evaluation', 'Evaluation Highlights', renderEvaluationSection(snapshot, opts))
+  add('executive', 'Trudy Verdict at a Glance', renderExecutiveSummary(snapshot, opts))
+  add('promo-plan', 'Recommended Promotion', renderPromoPlanSection(snapshot, opts))
+  add('room', 'Inside the Trudy Room', renderRoomSummarySection(snapshot))
+  const appendixHtml = renderAppendixSection(snapshot, opts)
+  if (appendixHtml) {
+    add('appendix', 'Appendix — Framing & Evaluation', appendixHtml)
+  }
   return sections
+}
+
+function renderExecutiveSummary(snapshot: SnapshotRich, opts: RenderOptionsRuntime) {
+  const brand = preferredBrand(snapshot.context) || snapshot.campaign.clientName || snapshot.campaign.title
+  const verdict = opts.judgeVerdict?.verdict || snapshot.offerIQ?.verdict || 'Review'
+  const verdictLabel = `Trudy verdict — ${verdict}`
+  const evaluationMeta = snapshot.narratives.evaluation?.meta || snapshot.evaluationMeta || {}
+  const recommendedUpgradeRaw = pickRecommendedUpgradeOption(evaluationMeta?.multiAgentImprovement)
+  const recommendedUpgrade = enforceSimpleLadderOption(
+    recommendedUpgradeRaw,
+    evaluationMeta,
+    snapshot.context?.briefSpec || {}
+  )
+  const upgradeSummary = summarizeUpgradeOption(recommendedUpgrade)
+  const baselineSummary = summarizeBaselineLadder(snapshot)
+  const bullets = buildUpgradeBullets(recommendedUpgrade, snapshot)
+  const chipRecommended = recommendedUpgrade
+    ? `<div class="hero-chip is-bold">Recommended — ${escapeHtml(String(recommendedUpgrade.label || 'Upgrade'))}</div>`
+    : ''
+
+  return `
+    <div class="hero-summary">
+      <div class="hero-head">
+        <div class="hero-head__copy">
+          <p class="hero-eyebrow">${escapeHtml(snapshot.context?.market || 'Campaign')}</p>
+          <h1>${escapeHtml(snapshot.campaign.title)}</h1>
+          <p class="hero-brand">${escapeHtml(brand)}</p>
+        </div>
+        <div class="hero-pills">
+          <div class="hero-chip">${escapeHtml(verdictLabel)}</div>
+          ${chipRecommended}
+        </div>
+      </div>
+      <div class="hero-bullets">
+        <h3>What Trudy changed</h3>
+        <ul>
+          ${bullets.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}
+        </ul>
+      </div>
+      <div class="hero-ladders">
+        ${renderMiniLadderCard('Before Trudy', baselineSummary)}
+        ${renderMiniLadderCard('Trudy plan', upgradeSummary)}
+      </div>
+    </div>
+  `
+}
+
+function renderPromoPlanSection(snapshot: SnapshotRich, opts: RenderOptionsRuntime) {
+  const meta = snapshot.narratives.evaluation?.meta || snapshot.evaluationMeta || {}
+  const recommendedUpgrade = enforceSimpleLadderOption(
+    pickRecommendedUpgradeOption(meta?.multiAgentImprovement),
+    meta,
+    snapshot.context?.briefSpec || {}
+  )
+  const ladderDetails = recommendedUpgrade ? describeUpgradeValueHeadline(recommendedUpgrade) : null
+  const heroCard = recommendedUpgrade ? renderDetailedLadder(recommendedUpgrade) : ''
+
+  const mechanicSteps = buildMechanicSteps(meta)
+  const hooks = buildHookLines(snapshot, recommendedUpgrade, snapshot.context?.briefSpec || {})
+  const brandHostLine = buildBrandHostLine(snapshot.context?.briefSpec || {}, preferredBrand(snapshot.context) || snapshot.campaign.clientName || snapshot.campaign.title)
+  const cadenceLine = describeCadenceLine(recommendedUpgrade, meta, snapshot.offerIQ)
+
+  return `
+    <div class="promo-plan">
+      <div class="promo-ladder">
+        <div class="promo-card">
+          <div class="promo-card__eyebrow">Recommended ladder</div>
+          ${heroCard || `<p>${escapeHtml(ladderDetails || 'Upgrade plan will populate once Bruce recommends an option.')}</p>`}
+        </div>
+        <div class="promo-card promo-card--note">
+          <div class="promo-card__eyebrow">Budget & cadence</div>
+          <p>${escapeHtml(cadenceLine || 'Cadence will be finalised once prize maths are locked.')}</p>
+        </div>
+      </div>
+      <div class="promo-mechanic">
+        <div class="promo-mechanic__col">
+          <div class="promo-card">
+            <div class="promo-card__eyebrow">Mechanic</div>
+            <ol>${mechanicSteps.map((step) => `<li>${escapeHtml(step)}</li>`).join('')}</ol>
+          </div>
+        </div>
+        <div class="promo-mechanic__col">
+          <div class="promo-card">
+            <div class="promo-card__eyebrow">Hooks</div>
+            <ul>${hooks.map((hook) => `<li>${escapeHtml(hook)}</li>`).join('')}</ul>
+          </div>
+          ${brandHostLine ? `<div class="promo-card promo-card--soft"><div class="promo-card__eyebrow">Brand host</div><p>${escapeHtml(brandHostLine)}</p></div>` : ''}
+        </div>
+      </div>
+    </div>
+  `
+}
+
+function renderRoomSummarySection(snapshot: SnapshotRich) {
+  const meta = snapshot.narratives.evaluation?.meta || snapshot.evaluationMeta || {}
+  const room = meta?.multiAgentEvaluation || {}
+  const agents = Array.isArray(room.agents) ? room.agents : []
+  const bruce = room.bruce || {}
+  if (!agents.length && !bruce.verdict) {
+    return '<p>Multi-agent evaluation not captured for this campaign.</p>'
+  }
+
+  const agentCards = agents
+    .map((agent: any) => {
+      const verdict = agent.verdict || 'ITERATE'
+      const headline = sanitizeValueLedLine(agent.headline || `Review from ${agent.agent}`, meta)
+      const points = scrubValueLedLines(Array.isArray(agent.key_points) ? agent.key_points.slice(0, 3) : [], meta)
+      return `<div class="agent-card">
+        <div class="agent-card__head">
+          <div>
+            <div class="agent-name">${escapeHtml(agent.agent || 'Agent')}</div>
+            <div class="agent-verdict agent-verdict--${escapeHtml(verdict.toLowerCase())}">${escapeHtml(verdict)}</div>
+          </div>
+        </div>
+        <p class="agent-headline">${escapeHtml(headline)}</p>
+    <ul>${points.map((pt: string) => `<li>${escapeHtml(pt)}</li>`).join('')}</ul>
+      </div>`
+    })
+    .join('')
+
+  const mustFix = scrubValueLedLines(Array.isArray(bruce.must_fix_items) ? bruce.must_fix_items.slice(0, 5) : [], meta)
+
+  return `
+    <div class="room-summary">
+      <div class="room-callout">
+        <p class="room-verdict">Bruce verdict — ${escapeHtml(bruce.verdict || 'ITERATE')}</p>
+        ${mustFix.length ? `<ul>${mustFix.map((item: string) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : '<p>No must-fix items.</p>'}
+      </div>
+      <div class="room-grid">
+        ${agentCards}
+      </div>
+    </div>
+  `
+}
+
+function renderAppendixSection(snapshot: SnapshotRich, opts: RenderOptionsRuntime) {
+  const framingHtml = renderFramingSection(snapshot)
+  const evaluationHtml = renderEvaluationSection(snapshot, opts)
+  const toggles: string[] = []
+  if (framingHtml) {
+    toggles.push(`
+      <details class="appendix-toggle">
+        <summary>Framing detail</summary>
+        <div class="appendix-body">${framingHtml}</div>
+      </details>
+    `)
+  }
+  if (evaluationHtml) {
+    toggles.push(`
+      <details class="appendix-toggle">
+        <summary>Evaluation detail</summary>
+        <div class="appendix-body">${evaluationHtml}</div>
+      </details>
+    `)
+  }
+  if (!toggles.length) return ''
+  return `
+    <section class="page page--appendix">
+      <h2>Appendix (internal)</h2>
+      <div class="appendix">
+        ${toggles.join('')}
+      </div>
+    </section>
+  `
+}
+
+function enforceSimpleLadderOption(option: any | null, meta: any, spec: Record<string, any>): any | null {
+  if (!option) return null
+  if (!shouldForceSimpleLadder(meta, spec)) return option
+  const clone: any = {
+    ...option,
+    runner_up_prize_count: 0,
+    runner_up_prizes: [],
+  }
+  if (Array.isArray(option.runner_up_prizes)) {
+    clone.runner_up_prizes = []
+  }
+  if (clone.offer) {
+    clone.offer = { ...clone.offer, runner_up_prizes: [], runner_up_prize_count: 0 }
+  }
+  return clone
+}
+
+function shouldForceSimpleLadder(meta: any, spec: Record<string, any>): boolean {
+  if (meta?.simpleLadderPreferred) return true
+  const posture = String(spec?.rewardPosture || '').toUpperCase()
+  if (posture !== 'ASSURED') return false
+  const hasHero =
+    (typeof spec?.majorPrizeOverlay === 'string' && Boolean(spec.majorPrizeOverlay.trim())) ||
+    (typeof spec?.heroPrize === 'string' && Boolean(spec.heroPrize.trim()))
+  if (!hasHero) return false
+  const cashbackAmount = spec?.cashback?.amount
+  const cashbackPercent = spec?.cashback?.percent
+  const hasCashback = Number(cashbackAmount || cashbackPercent || 0) > 0
+  const assuredItems = Array.isArray(spec?.assuredItems) && spec.assuredItems.length > 0
+  return hasCashback || assuredItems
+}
+
+type LadderSummary = {
+  hero?: string
+  runners?: string[]
+  budget?: string
+  cadence?: string
+}
+
+function summarizeBaselineLadder(snapshot: SnapshotRich): LadderSummary {
+  const diagnostics = snapshot.offerIQ?.diagnostics || {}
+  const heroLabel = snapshot.offerIQ?.heroOverlay?.label || snapshot.offerIQ?.storyNotes?.[0] || ''
+  const heroCount = snapshot.offerIQ?.heroOverlay?.count || diagnostics.heroCount || null
+  const runnerCount = diagnostics.totalWinners && heroCount ? diagnostics.totalWinners - heroCount : diagnostics.totalWinners || null
+  const runnerLabel = runnerCount ? `${formatCount(runnerCount)} other winners` : ''
+  return {
+    hero: heroLabel ? `${heroCount ? `${formatCount(heroCount)} × ` : ''}${heroLabel}` : '',
+    runners: runnerLabel ? [runnerLabel] : [],
+    budget: diagnostics.budgetNote || '',
+    cadence: diagnostics.cadenceSignals ? (diagnostics.cadenceSignals ? 'Cadence visible' : '') : '',
+  }
+}
+
+function summarizeUpgradeOption(option: any | null): LadderSummary {
+  if (!option) return {}
+  const hero = describeHeroTierFromOption(option)
+  const runners = describeRunnerTierFromOption(option)
+  const budget = option?.offer?.cashback != null ? `Cashback base — $${Number(option.offer.cashback).toLocaleString('en-US')}` : ''
+  const trade = option?.trade_incentive ? `Trade: ${option.trade_incentive}` : ''
+  return {
+    hero: hero || '',
+    runners,
+    budget: trade || '',
+    cadence: option?.cadence_comment || '',
+  }
+}
+
+function renderMiniLadderCard(title: string, summary: LadderSummary) {
+  return `<div class="mini-ladder-card">
+    <div class="mini-ladder-card__title">${escapeHtml(title)}</div>
+    <ul>
+      ${summary?.hero ? `<li><strong>Hero</strong> — ${escapeHtml(summary.hero)}</li>` : ''}
+      ${(summary?.runners || []).map((line) => `<li><strong>Winners</strong> — ${escapeHtml(line)}</li>`).join('')}
+      ${summary?.budget ? `<li><strong>Budget</strong> — ${escapeHtml(summary.budget)}</li>` : ''}
+    </ul>
+  </div>`
+}
+
+function renderDetailedLadder(option: any) {
+  const hero = describeHeroTierFromOption(option)
+  const runners = describeRunnerTierFromOption(option)
+  const baseValue = describeBaseValueOption(option?.base_value || option?.offer?.base_value || null)
+  const runnerMessage = baseValue
+    ? `${baseValue} is the mass value layer.`
+    : 'Guaranteed value carries the mass value layer.'
+  const runnersHtml = runners.length
+    ? `<ul>${runners.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>`
+    : `<p>No runner tier — ${escapeHtml(runnerMessage)}</p>`
+  return `
+    <div class="ladder-hero">
+      <h4>Hero tier</h4>
+      <p>${escapeHtml(hero || 'To be defined')}</p>
+    </div>
+    <div class="ladder-runners">
+      <h4>Runner-ups</h4>
+      ${runnersHtml}
+    </div>
+  `
+}
+
+function buildUpgradeBullets(option: any | null, snapshot: SnapshotRich): string[] {
+  const meta = snapshot.narratives.evaluation?.meta || snapshot.evaluationMeta || {}
+  const spec = snapshot.context?.briefSpec || {}
+  if (option && Array.isArray(option.why_this) && option.why_this.length) {
+    const cleaned = scrubValueLedLines(option.why_this, meta)
+    if (cleaned.length) return cleaned.slice(0, 3)
+  }
+  const defaults = meta?.simpleLadderPreferred
+    ? [
+        'Keep the structure clean: the guaranteed cashback carries fairness while the hero remains a limited premium draw.',
+        'Sell the hero as theatre on its own cadence instead of inflating the ladder.',
+        'Cap the cashback liability and highlight the guarantee on pack.',
+      ]
+    : [
+        'Clarifies the ladder so hooks can promise specific odds.',
+        'Keeps staff effort low with a one-screen mechanic.',
+        'Stays inside the budget while feeling more generous.',
+      ]
+  if (meta?.simpleLadderPreferred) {
+    const capRaw = spec?.cashback?.cap
+    if (!capRaw || String(capRaw).trim().toUpperCase() === 'UNLIMITED') {
+      defaults[2] = 'Align Finance on a claims cap, fund limit, or insurance for the cashback liability.'
+    }
+  }
+  const diag = snapshot.offerIQ?.diagnostics
+  if (diag?.budgetNote) defaults[2] = diag.budgetNote
+  return defaults
+}
+
+function buildMechanicSteps(meta: any, spec: Record<string, any> = {}): string[] {
+  const steps: string[] = []
+  const raw = meta?.ui?.mechanic || meta?.mechanic || ''
+  const fromArrows = raw.includes('→') ? raw.split('→') : raw.split(/[\n\.,]+/)
+  fromArrows
+    .map((segment: string) => cleanText(segment))
+    .filter(Boolean)
+    .forEach((line) => steps.push(line))
+
+  const oneLiner = spec?.mechanicOneLiner || spec?.entryMechanic || ''
+  if (steps.length < 3 && oneLiner) {
+    oneLiner
+      .split(/(?:→|,|then|\+)/i)
+      .map((segment) => cleanText(segment))
+      .filter(Boolean)
+      .forEach((line) => steps.push(line))
+  }
+
+  if (steps.length < 3 && spec?.proofType && spec.proofType !== 'NONE') {
+    steps.push('Upload proof of purchase online')
+  }
+  if (steps.length < 3 && spec?.processingTime && spec.processingTime !== 'INSTANT') {
+    steps.push(`Receive the reward within ${spec.processingTime.toLowerCase()}`)
+  }
+  if (steps.length < 3 && spec?.cashback?.processingDays) {
+    steps.push(`Cashback lands within ${spec.cashback.processingDays} days`)
+  }
+  if (steps.length < 3 && hasMeaningfulCashbackPayload(spec?.cashback)) {
+    steps.push('Receive the cashback and be entered into the hero draw automatically')
+  }
+
+  let deduped = Array.from(new Set(steps.map((line) => cleanText(line)).filter(Boolean)))
+  if (
+    deduped.length < 4 &&
+    hasMeaningfulCashbackPayload(spec?.cashback) &&
+    !deduped.some((line) => /^receive/i.test(line))
+  ) {
+    deduped = [...deduped, 'Receive the cashback and sit in the hero draw at the end.']
+  }
+  if (deduped.length) return deduped.slice(0, 4)
+  return ['Buy participating products', 'Upload or enter', 'Receive reward'].map((line) => cleanText(line))
+}
+
+function buildMechanicStepsFromText(text: string): string[] {
+  if (!text) return []
+  const steps = text
+    .split(/(?:→|,|;|then|\+)/i)
+    .map((segment) => cleanText(segment))
+    .filter(Boolean)
+  if (steps.length) return steps.slice(0, 4)
+  return ['Buy', 'Enter', 'Receive reward']
+}
+
+function buildHookLines(snapshot: SnapshotRich, option: any | null, spec: Record<string, any>): string[] {
+  const hooks: string[] = []
+  if (option?.hooks) {
+    hooks.push(...option.hooks)
+  }
+  const evalHooks = snapshot.narratives.evaluation?.meta?.ui?.hookOptions || []
+  hooks.push(...evalHooks)
+  const deduped = hooks
+    .map((line) => sanitizeHookLine(cleanText(line), spec))
+    .filter(Boolean)
+  return Array.from(new Set(deduped)).slice(0, 4)
+}
+
+function describeCadenceLine(option: any | null, meta: any, offerIQ: any) {
+  if (meta?.simpleLadderPreferred) {
+    const baseValue = describeBaseValueOption(option?.base_value || option?.offer?.base_value || meta?.offer_state?.base_value || null)
+    const guarantee = baseValue ? baseValue : 'The guaranteed value'
+    return `${guarantee} carries fairness; the hero overlay is drawn at the promotion’s close as a PR-only theatre moment.`
+  }
+  const cadenceEntries = Array.isArray(meta?.multiAgentImprovement?.cadence_summary)
+    ? meta.multiAgentImprovement.cadence_summary
+    : []
+  const match = option ? findOptionByLabel(cadenceEntries, option.label) : null
+  if (match?.majors_text || match?.runners_text) {
+    const hero = match.majors_text ? `Hero cadence — ${match.majors_text}` : null
+    const runners = match.runners_text ? `Runner cadence — ${match.runners_text}` : null
+    return [hero, runners].filter(Boolean).join(' • ')
+  }
+  if (offerIQ?.diagnostics?.budgetNote) return offerIQ.diagnostics.budgetNote
+  return ''
 }
 
 function renderBriefSection(snapshot: SnapshotRich) {
@@ -301,6 +1301,7 @@ function framingMetaHasContent(meta: any) {
   if (hasList(meta?.hooks)) return true
   if (hasList(meta?.proposition_candidates)) return true
   if (hasList(meta?.brand_truths)) return true
+  if (hasList(meta?.prize_truths)) return true
   if (hasList(meta?.reasons_to_believe)) return true
   if (hasList(meta?.category_codes?.lean)) return true
   if (hasList(meta?.category_codes?.break)) return true
@@ -350,6 +1351,9 @@ function renderFramingFromMeta(meta: any, spec: Record<string, any>) {
         .slice(0, 4)
     : []
   if (prizeItems.length) sections.push(renderListSection('Reward shape', prizeItems))
+
+  const prizeTruths = takeStrings(meta.prize_truths, 4)
+  if (prizeTruths.length) sections.push(renderListSection('Prize truths', prizeTruths))
 
   const leanCodes = takeStrings(meta.category_codes?.lean, 3)
   const breakCodes = takeStrings(meta.category_codes?.break, 3)
@@ -576,67 +1580,6 @@ function dedupeByLower(items: string[]): string[] {
   return out
 }
 
-function buildFixPlanCandidates(sections: Record<string, string>, scoreboard: any): string[] {
-  const base = [sections['Fix It'], sections['Tighten'], sections['Stretch']]
-    .map((line) => cleanText(line || ''))
-    .filter(Boolean)
-  const boardFixes = [
-    scoreboard?.friction?.fix,
-    scoreboard?.rewardShape?.fix,
-    scoreboard?.retailerReadiness?.fix,
-    scoreboard?.objectiveFit?.fix,
-  ]
-    .map((line) => cleanText(line || ''))
-    .filter(Boolean)
-  const combined = [...base, ...boardFixes]
-  const filtered = combined.filter((line) => !/hero overlay|double pass/i.test(line || ''))
-  return dedupePlanLines(filtered).slice(0, 4)
-}
-
-function dedupePlanLines(lines: string[]): string[] {
-  const seen = new Set<string>()
-  const out: string[] = []
-  for (const line of lines) {
-    const text = line.trim()
-    if (!text) continue
-    const key = planConceptKey(text)
-    if (seen.has(key)) continue
-    seen.add(key)
-    out.push(capitalizeSentence(text))
-  }
-  return out
-}
-
-function planConceptKey(text: string): string {
-  const lower = text.toLowerCase()
-  if (lower.includes('pint') && (lower.includes('6') || lower.includes('six'))) {
-    return 'reduce-to-6-pints'
-  }
-  if (lower.includes('reduce') && lower.includes('pint')) {
-    return 'reduce-pints'
-  }
-  if (lower.includes('digital') || lower.includes('register') || lower.includes('app')) {
-    return 'digital-passport'
-  }
-  if (lower.includes('dashboard')) {
-    return 'online-dashboard'
-  }
-  if (lower.includes('mail') || lower.includes('first touch') || lower.includes('multi-upload')) {
-    return 'simplify-entry'
-  }
-  return lower
-    .toLowerCase()
-    .replace(/[^a-z0-9 ]/g, '')
-    .replace(/\b(twelve|12)\b/g, '12')
-    .replace(/\b(six|6)\b/g, '6')
-    .trim()
-}
-
-function capitalizeSentence(text: string): string {
-  if (!text) return ''
-  return text.charAt(0).toUpperCase() + text.slice(1)
-}
-
 function describeValueScale(scoreboard: any, meta: any, offerIQ: any): string | null {
   const rewardStatus = String(scoreboard?.rewardShape?.status || '').toUpperCase()
   const mode = offerIQ?.mode || meta?.offerIQ?.mode || null
@@ -715,6 +1658,42 @@ function describeScaleZoneBand(zone?: string | null): string {
   return ''
 }
 
+function normalizeUpgradeLabel(label?: string | null): string {
+  if (!label) return ''
+  return String(label)
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, ' ')
+    .split(' ')
+    .filter(Boolean)
+    .filter((word) => !['UPGRADE', 'UPGRADES', 'OPTION', 'OPTIONS', 'PLAN'].includes(word))
+    .join(' ')
+    .trim()
+}
+
+function findOptionByLabel(options: any[] | null | undefined, targetLabel?: string | null) {
+  if (!options || !options.length || !targetLabel) return null
+  const normalizedTarget = normalizeUpgradeLabel(targetLabel)
+  if (!normalizedTarget) return null
+  const direct = options.find((opt) => normalizeUpgradeLabel(opt?.label) === normalizedTarget)
+  if (direct) return direct
+  const priorityTokens = ['SAFE', 'BOLD', 'RIDICULOUS']
+  const preferredToken = priorityTokens.find((token) => normalizedTarget.includes(token))
+  if (preferredToken) {
+    const match = options.find((opt) => normalizeUpgradeLabel(opt?.label).includes(preferredToken))
+    if (match) return match
+  }
+  const targetTokens = normalizedTarget.split(' ').filter(Boolean)
+  if (!targetTokens.length) return null
+  return (
+    options.find((opt) => {
+      const normalized = normalizeUpgradeLabel(opt?.label)
+      if (!normalized) return false
+      const optionTokens = normalized.split(' ').filter(Boolean)
+      return optionTokens.some((token) => targetTokens.includes(token))
+    }) || null
+  )
+}
+
 function deriveImprovedValuePromise(meta: any): ValueUpgradeSummary | null {
   const improvement = meta?.multiAgentImprovement
   if (!improvement || !Array.isArray(improvement.agents)) return null
@@ -722,20 +1701,28 @@ function deriveImprovedValuePromise(meta: any): ValueUpgradeSummary | null {
     (agent: any) => agent?.agent === 'OfferIQ' && Array.isArray(agent.options) && agent.options.length
   )
   if (!offerAgent) return null
-  const preferredLabel =
-    offerAgent.recommended_option_label ||
-    improvement.bruce?.recommended_option_label ||
-    (improvement.bruce?.upgrade_options?.[0]?.label ?? null)
+  const bruceOptions = Array.isArray(improvement.bruce?.upgrade_options) ? improvement.bruce.upgrade_options : []
+  const bruceRecommendedLabel = improvement.bruce?.recommended_option_label || null
   const candidate =
-    offerAgent.options.find((opt: any) => opt?.label === preferredLabel) || offerAgent.options[0] || null
+    findOptionByLabel(offerAgent.options, bruceRecommendedLabel) ||
+    findOptionByLabel(offerAgent.options, offerAgent.recommended_option_label) ||
+    offerAgent.options[0] ||
+    null
+  const bruceOption =
+    findOptionByLabel(bruceOptions, bruceRecommendedLabel) ||
+    (candidate ? findOptionByLabel(bruceOptions, candidate.label) : null) ||
+    bruceOptions[0] ||
+    null
   if (!candidate) return null
 
   const status = mapScaleZoneToStatus(candidate.scale_zone)
-  const lead = candidate.label ? `Upgrade — ${String(candidate.label)} option` : undefined
+  const leadLabel = bruceOption?.label || candidate.label || bruceRecommendedLabel || offerAgent.recommended_option_label || ''
+  const lead = leadLabel ? `Upgrade — ${String(leadLabel)} option` : undefined
 
   const summaryParts: string[] = []
   const baseValueText = describeBaseValueOption(candidate.base_value)
-  if (candidate.description) summaryParts.push(String(candidate.description))
+  if (bruceOption?.summary) summaryParts.push(String(bruceOption.summary))
+  else if (candidate.description) summaryParts.push(String(candidate.description))
   else if (candidate.rationale) summaryParts.push(String(candidate.rationale))
   if (baseValueText) summaryParts.push(baseValueText)
   const majorCount =
@@ -758,6 +1745,18 @@ function deriveImprovedValuePromise(meta: any): ValueUpgradeSummary | null {
   if (zoneText) tailParts.push(zoneText)
   if (Array.isArray(candidate.trade_offs) && candidate.trade_offs.length) {
     tailParts.push(String(candidate.trade_offs[0]))
+  }
+  if (bruceOption?.why_this?.length) {
+    tailParts.push(String(bruceOption.why_this[0]))
+  }
+  const cadenceEntry =
+    improvement?.cadence_summary && Array.isArray(improvement.cadence_summary)
+      ? findOptionByLabel(improvement.cadence_summary, bruceOption?.label || candidate.label || null)
+      : null
+  if (cadenceEntry?.majors_per_day != null && cadenceEntry.majors_per_day < 0.05 && cadenceEntry.majors_text) {
+    tailParts.push(
+      `Hero cadence is extremely sparse (${cadenceEntry.majors_text}); treat it as PR-only or add more majors.`
+    )
   }
 
   const fix = Array.isArray(offerAgent.must_fix) && offerAgent.must_fix.length ? String(offerAgent.must_fix[0]) : undefined
@@ -1216,6 +2215,20 @@ function dedupeStrings(items: Array<string | undefined>) {
   return out
 }
 
+function scrubValueLedLines(lines: Array<string | undefined>, meta: any): string[] {
+  const cleaned = (Array.isArray(lines) ? lines : [lines])
+    .map((line) => cleanText(line || ''))
+    .filter(Boolean)
+  if (!meta?.simpleLadderPreferred) return cleaned
+  const banned = /(runner|cadence|instant win|weekly|mid[-\s]?tier)/i
+  const keep = cleaned.filter((line) => !banned.test(line))
+  if (keep.length) return keep
+  return [
+    'Keep the structure clean: the guaranteed cashback carries fairness while the hero remains a limited premium draw.',
+    'Sell the hero as theatre on its own cadence rather than inflating the ladder.',
+  ]
+}
+
 function listFromBrief(value: any): string[] {
   if (!value) return []
   if (Array.isArray(value)) return value.map((entry) => cleanText(entry || '')).filter(Boolean)
@@ -1511,55 +2524,6 @@ function renderResearchSection(snapshot: SnapshotRich) {
   return `${grid}${benchmarks || ''}`
 }
 
-function renderExecutiveSummary(snapshot: SnapshotRich, opts: RenderOptionsRuntime) {
-  const meta = snapshot.narratives.evaluation?.meta || snapshot.evaluationMeta || {}
-  const ui = meta.ui || {}
-  const verdict = ui.verdict || snapshot.offerIQ?.verdict || 'Review'
-  const judgeScore = opts.judgeVerdict?.score
-  const offerIQVerdict = snapshot.offerIQ?.verdict
-  const board = meta.scoreboard || {}
-  const conditions = board.conditions || meta.conditions || ''
-  const riskLines = extractRiskLines(board)
-  const measurement = ui.measurement || meta.measurement || ''
-
-  const decisionMetaParts: string[] = []
-  if (offerIQVerdict) decisionMetaParts.push(`OfferIQ verdict: ${escapeHtml(String(offerIQVerdict))}`)
-  if (typeof judgeScore === 'number') decisionMetaParts.push(`Judge score: ${escapeHtml(String(judgeScore))}/100`)
-
-  const decisionCard = `<div class="decision-card">
-    <h3>Decision</h3>
-    <div class="decision-value">${escapeHtml(String(verdict))}</div>
-    ${decisionMetaParts.length ? `<div class="decision-meta">${decisionMetaParts.map((line) => escapeHtml(line)).join('<br />')}</div>` : '<div class="decision-meta">Waiting on approval chain.</div>'}
-  </div>`
-
-  const guardList = []
-  if (conditions) guardList.push(conditions)
-  if (riskLines.length) guardList.push(...riskLines)
-  const guardHtml = `<div class="decision-card">
-    <h3>Guardrails</h3>
-    ${guardList.length ? `<ul class="decision-list">${guardList.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : '<div class="decision-meta">No critical conditions flagged.</div>'}
-  </div>`
-
-  const start = formatDate(snapshot.campaign.startDate)
-  const end = formatDate(snapshot.campaign.endDate)
-  const redemption = formatDate(snapshot.context?.briefSpec?.redemptionEndDate)
-  const timelineRows = [
-    start ? `<div class="timeline-row"><strong>Start</strong><span>${escapeHtml(start)}</span></div>` : '',
-    end ? `<div class="timeline-row"><strong>End</strong><span>${escapeHtml(end)}</span></div>` : '',
-    redemption ? `<div class="timeline-row"><strong>Redemption close</strong><span>${escapeHtml(redemption)}</span></div>` : ''
-  ].filter(Boolean).join('')
-  const timelineHtml = `<div class="decision-card">
-    <h3>Key dates</h3>
-    ${timelineRows || '<div class="decision-meta">Dates not yet confirmed.</div>'}
-  </div>`
-
-  const measurementHtml = measurement
-    ? `<div class="kpi-bar"><span class="kpi-label">Primary KPI</span><span class="kpi-detail">${escapeHtml(measurement)}</span></div>`
-    : ''
-
-  return `<div class="decision-grid">${decisionCard}${guardHtml}${timelineHtml}</div>${measurementHtml}`
-}
-
 function renderMultiAgentRoomHtml(payload: any) {
   if (!payload || !payload.bruce) return ''
   const bruce = payload.bruce || {}
@@ -1620,22 +2584,59 @@ function renderMultiAgentRoomHtml(payload: any) {
   `
 }
 
-function renderMultiAgentImprovementHtml(payload: any) {
+function renderMultiAgentImprovementHtml(payload: any, meta?: any) {
   if (!payload || !payload.bruce) return ''
   const bruce = payload.bruce || {}
   const options = Array.isArray(bruce.upgrade_options) ? bruce.upgrade_options.slice(0, 2) : []
   const recommended = bruce.recommended_option_label || null
   const agentBlocks = Array.isArray(payload.agents) ? payload.agents : []
+  const offerIqImprove = agentBlocks.find(
+    (block: any) => block?.agent === 'OfferIQ' && Array.isArray(block.options) && block.options.length
+  )
+  const canonicalOptions = offerIqImprove?.options || []
+  const cadenceSummaryEntries = Array.isArray(payload.cadence_summary) ? payload.cadence_summary : []
   if (!options.length && !agentBlocks.length) return ''
+  const toNumberOrNull = (value: any) => {
+    if (value == null || value === '') return null
+    const num = Number(value)
+    return Number.isFinite(num) ? num : null
+  }
+
+  const simpleLadder = Boolean(meta?.simpleLadderPreferred)
 
   const optionCards = options
     .map((opt: any) => {
       const hooks = Array.isArray(opt.hooks) ? opt.hooks.slice(0, 3) : []
       const whyThis = Array.isArray(opt.why_this) ? opt.why_this.slice(0, 3) : []
+      const canonical = findOptionByLabel(canonicalOptions, opt?.label) || null
+      const cadenceEntry = simpleLadder ? null : findOptionByLabel(cadenceSummaryEntries, opt?.label) || null
       const offerParts: string[] = []
+      const baseValueText = describeBaseValueOption((canonical && canonical.base_value) || opt?.base_value || null)
+      if (baseValueText) offerParts.push(`Base: ${baseValueText}`)
       if (opt.offer?.cashback != null) offerParts.push(`Cashback: $${opt.offer.cashback}`)
-      if (opt.offer?.major_prizes != null) offerParts.push(`Majors: ${opt.offer.major_prizes}`)
+      const effectiveMajorCount =
+        toNumberOrNull(opt?.offer?.major_prizes) ?? (canonical ? toNumberOrNull(canonical.major_prize_count) : null)
+      const majorsText = formatCount(effectiveMajorCount)
+      if (majorsText) offerParts.push(`Majors: ${majorsText}`)
+      const runnerUpsFromList =
+        Array.isArray(opt.runner_up_prizes) && opt.runner_up_prizes.length
+          ? opt.runner_up_prizes.reduce((sum: number, rp: any) => {
+              const val = toNumberOrNull(rp?.count)
+              return val != null ? sum + val : sum
+            }, 0)
+          : null
+      const effectiveRunnerCount =
+        (runnerUpsFromList && runnerUpsFromList > 0 ? runnerUpsFromList : null) ??
+        (canonical ? toNumberOrNull(canonical.runner_up_prize_count) : null)
+      const runnerSummary = formatCount(effectiveRunnerCount)
+      if (!simpleLadder && runnerSummary) offerParts.push(`Runner-ups: ${runnerSummary}`)
+      if (cadenceEntry?.majors_text) offerParts.push(`Hero cadence: ${cadenceEntry.majors_text}`)
+      if (cadenceEntry?.runners_text) offerParts.push(`Runner cadence: ${cadenceEntry.runners_text}`)
       const runnerUps = Array.isArray(opt.runner_up_prizes) ? opt.runner_up_prizes : []
+      const runnerDescriptions = runnerUps.map((rp: any) => String(rp?.description || '').toLowerCase()) as string[]
+      const filteredRunnerDescriptions = runnerDescriptions.filter((desc: string) => Boolean(desc))
+      const hasSharedPrize = filteredRunnerDescriptions.some((desc: string) => /double|two|pair|family/.test(desc))
+      const sanitizedHooks = hooks.map((hook: string) => sanitizeHookPrizeLanguage(hook, hasSharedPrize))
       const runnerList = runnerUps.length
         ? `<div class="multi-upgrade-runners"><strong>Runner-ups</strong><ul>${runnerUps
             .map(
@@ -1649,8 +2650,8 @@ function renderMultiAgentImprovementHtml(payload: any) {
       const tradeLine = opt.trade_incentive ? `<div class="multi-upgrade-trade"><strong>Trade:</strong> ${escapeHtml(opt.trade_incentive)}</div>` : ''
       const heroLine = opt.hero_overlay ? `<div class="multi-upgrade-hero"><strong>Hero overlay</strong><p>${escapeHtml(opt.hero_overlay)}</p></div>` : ''
       const mechLine = opt.mechanic ? `<div class="multi-upgrade-mechanic"><strong>Mechanic:</strong> ${escapeHtml(opt.mechanic)}</div>` : ''
-      const hookList = hooks.length
-        ? `<ul>${hooks.map((hook: string) => `<li>${escapeHtml(hook)}</li>`).join('')}</ul>`
+      const hookList = sanitizedHooks.length
+        ? `<ul>${sanitizedHooks.map((hook: string) => `<li>${escapeHtml(hook)}</li>`).join('')}</ul>`
         : ''
       const whyList = whyThis.length
         ? `<ul>${whyThis.map((line: string) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>`
@@ -1687,6 +2688,19 @@ function renderMultiAgentImprovementHtml(payload: any) {
         })
         .join('')}</div>`
     : ''
+  const hypothesisStatus: Array<{ id: string; status: string; note?: string }> = Array.isArray(payload.hypothesis_status)
+    ? payload.hypothesis_status
+    : []
+  const hypothesisHtml = hypothesisStatus.length
+    ? `<div class="multi-upgrade-hypotheses"><strong>Hypotheses</strong><ul>${hypothesisStatus
+        .map((entry) => {
+          const label = entry.id ? entry.id.replace(/_/g, ' ') : 'Hypothesis'
+          const status = entry.status ? entry.status.toUpperCase() : 'UNKNOWN'
+          const note = entry.note ? ` — ${entry.note}` : ''
+          return `<li>${escapeHtml(status)}: ${escapeHtml(label)}${escapeHtml(note)}</li>`
+        })
+        .join('')}</ul></div>`
+    : ''
 
   return `
     <div class="multi-upgrade">
@@ -1699,6 +2713,7 @@ function renderMultiAgentImprovementHtml(payload: any) {
       </div>
       ${optionCards ? `<div class="multi-upgrade-grid">${optionCards}</div>` : ''}
       ${agentBlocksHtml}
+      ${hypothesisHtml}
     </div>
   `
 }
@@ -1718,127 +2733,40 @@ function renderEvaluationSection(snapshot: SnapshotRich, opts: RenderOptionsRunt
   if (sections['Staff Line']) {
     sections['Staff Line'] = sections['Staff Line'].replace(/Key campaign[-–—:].*/i, '').trim()
   }
+  const stalePattern = /(CREATE_UNBOXED|personaliz|cinema escape)/i
+  if (sections['Where It Breaks'] && stalePattern.test(sections['Where It Breaks'])) {
+    sections['Where It Breaks'] =
+      scoreboard?.rewardShape?.why ||
+      scoreboard?.objectiveFit?.why ||
+      sections['Where It Breaks'].replace(stalePattern, '').trim()
+  }
 
   const verdictCopy = sections['Verdict'] || ''
   const decisionHtml = verdictCopy
     ? `<div class="callout callout-decision"><h4>Verdict</h4><p>${escapeHtml(verdictCopy)}</p></div>`
     : ''
 
-  const hookListRaw = sections['Hook Shortlist'] ? parseHookLines(sections['Hook Shortlist']) : []
   const spec = snapshot.context?.briefSpec || {}
+  const brandName = preferredBrand(snapshot.context) || snapshot.campaign.clientName || snapshot.campaign.title || ''
   const kpiFallback = cleanText(spec.primaryKpi || spec.primaryObjective || '')
   let measurement = sections['Measurement'] || ui.measurement || meta.measurement || ''
-  let hookList = dedupeStrings(
-    hookListRaw
-      .filter((hook) => {
-        if (/^measurement\b/i.test(hook)) {
-          const extracted = hook.replace(/^measurement\b[:\s-]*/i, '').trim()
-          if (extracted) measurement = measurement || extracted
-          return false
-        }
-        return true
-      })
-      .concat(Array.isArray(ui.hookOptions) ? ui.hookOptions : [])
-      .map((hook) => cleanText(hook))
-      .filter(Boolean)
-  )
-    .map(formatHookCandidate)
-    .filter((hook) => hook.length <= 80)
-  hookList = dedupeByLower(hookList)
-  if (hookList.length > 3) hookList = hookList.slice(0, 3)
+  const hookListRaw = sections['Hook Shortlist'] ? parseHookLines(sections['Hook Shortlist']) : []
+  for (const hook of hookListRaw) {
+    if (/^measurement\b/i.test(hook)) {
+      const extracted = hook.replace(/^measurement\b[:\s-]*/i, '').trim()
+      if (extracted) measurement = measurement || extracted
+    }
+  }
 
-  const storyNotes: string[] = Array.isArray(meta?.offerIQ?.storyNotes)
-    ? meta.offerIQ.storyNotes.map((note: any) => cleanText(note || '')).filter(Boolean)
-    : []
-
-  const improvedValue = deriveImprovedValuePromise(meta)
-  const valueTailParts = [
-    improvedValue?.tail || describeValueScale(scoreboard, meta, snapshot.offerIQ || meta?.offerIQ || null),
-    storyNotes[0],
-  ].filter(Boolean)
-
-  const hookCard = renderEvaluationFocusCard({
-    title: 'Hook verdict',
-    status: scoreboard?.hookStrength?.status,
-    lead: ui.hook ? `Current hook — “${ui.hook}”` : '',
-    summary: meta?.hook_why_change || sections['Hook Upgrade'] || scoreboard?.hookStrength?.why || '',
-    fix: scoreboard?.hookStrength?.fix || '',
-    listTitle: hookList.length ? 'Hook options' : undefined,
-    list: hookList,
-  })
-
-  const prizePoolValue =
-    spec.prizePoolValue != null && Number.isFinite(Number(spec.prizePoolValue))
-      ? Number(spec.prizePoolValue)
-      : null
-  const prizePoolLead = prizePoolValue ? `Prize pool ≈ $${prizePoolValue.toLocaleString('en-US')}` : ''
-  const valueLeadParts = [
-    snapshot.offerIQ?.verdict ? `OfferIQ — ${snapshot.offerIQ.verdict}` : '',
-    prizePoolLead,
-  ].filter(Boolean)
-
-  const valueCard = renderEvaluationFocusCard({
-    title: 'Value promise',
-    status: improvedValue?.status || scoreboard?.rewardShape?.status,
-    lead: improvedValue?.lead || (valueLeadParts.length ? valueLeadParts.join(' • ') : ''),
-    summary: improvedValue?.summary || scoreboard?.rewardShape?.why || sections['Where It Breaks'] || '',
-    fix: [improvedValue?.fix, scoreboard?.rewardShape?.fix].filter(Boolean).join(' ') || undefined,
-    tail: valueTailParts.length ? valueTailParts.join(' ') : undefined,
-  })
-
-  const heroOverlayCard = snapshot.offerIQ?.heroOverlay
-    ? renderEvaluationFocusCard({
-        title: 'Hero overlay',
-        status: 'INFO',
-        lead: snapshot.offerIQ.heroOverlay.label ? `Hero prize — ${snapshot.offerIQ.heroOverlay.label}` : '',
-        summary:
-          snapshot.offerIQ.heroOverlay.narrative ||
-          'Treat this experience as the story engine: cashback is the proof you get value now; the chef experience is the tale shoppers retell. Make that ladder explicit.',
-        fix: 'Spell out how the hero experience ladders off the cashback and keep the entry flow identical.',
-        listTitle: snapshot.offerIQ.heroOverlay.count ? 'Count' : undefined,
-        list: snapshot.offerIQ.heroOverlay.count ? [`≈${snapshot.offerIQ.heroOverlay.count} hero winners`] : [],
-      })
-    : ''
-
-  const opsSummaryParts = [
-    scoreboard?.friction?.why ? `Entry — ${scoreboard.friction.why}` : '',
-    scoreboard?.retailerReadiness?.why ? `Retail — ${scoreboard.retailerReadiness.why}` : '',
-    scoreboard?.fulfilment?.why ? `Fulfilment — ${scoreboard.fulfilment.why}` : '',
-  ]
-    .map((line) => line.trim().replace(/\.\.$/, '.'))
-    .filter(Boolean)
-  const opsSummary = opsSummaryParts.length ? opsSummaryParts.join('. ') : ''
-  const opsFixes = [
-    scoreboard?.friction?.fix,
-    scoreboard?.retailerReadiness?.fix,
-    scoreboard?.fulfilment?.fix,
-  ]
-    .map((line) => cleanText(line || ''))
-    .filter(Boolean)
-    .join(' ')
-  const opsGuardrails = collectConditionLines(scoreboard || {}).map((line) => normalizeBulletText(line)).filter(Boolean)
-  const opsCard = renderEvaluationFocusCard({
-    title: 'Ops & guardrails',
-    status: deriveWorstStatus([scoreboard?.friction?.status, scoreboard?.retailerReadiness?.status, scoreboard?.fulfilment?.status]),
-    summary: opsSummary,
-    fix: opsFixes || (scoreboard?.conditions || meta?.conditions || ''),
-    listTitle: opsGuardrails.length ? 'Guardrails' : undefined,
-    list: opsGuardrails,
-    tail: scoreboard?.conditions && !opsFixes ? scoreboard.conditions : '',
-  })
-
-  const focusGridCards = [hookCard, valueCard, heroOverlayCard, opsCard].filter(Boolean)
-  const focusGrid = focusGridCards.length
-    ? `<div class="evaluation-focus-grid">${focusGridCards.join('')}</div>`
-    : ''
-
-  const reasonsHtml = renderEvaluationReasonGrid({
-    works: sections['Why It Works'],
-    breaks: sections['Where It Breaks'],
-  })
-
-  const fixPlanCandidates = buildFixPlanCandidates(sections, scoreboard)
-  const fixPlanHtml = fixPlanCandidates.length ? renderListSection('Fix plan', fixPlanCandidates) : ''
+  const recommendedUpgrade = pickRecommendedUpgradeOption(meta?.multiAgentImprovement)
+  const upgradeSummaryHtml = recommendedUpgrade ? renderUpgradeNarrativeFromOption(recommendedUpgrade) : ''
+  const evaluationProseHtml = evaluationText ? renderMarkdownBlock(evaluationText) : ''
+  const fallbackHtml = renderEvaluationFallbackProse(scoreboard, sections)
+  const narrativeHtml = upgradeSummaryHtml || evaluationProseHtml || fallbackHtml
+  const legacyHtml =
+    upgradeSummaryHtml && evaluationProseHtml
+      ? `<details class="evaluation-legacy"><summary>Original evaluation transcript</summary>${evaluationProseHtml}</details>`
+      : ''
 
   const measurementLines: string[] = []
   if (kpiFallback) measurementLines.push(`Primary KPI — ${kpiFallback}`)
@@ -1846,101 +2774,289 @@ function renderEvaluationSection(snapshot: SnapshotRich, opts: RenderOptionsRunt
     measurementLines.push(cleanText(measurement))
   }
   if (!measurementLines.length) {
-    measurementLines.push('Primary KPI — +8–12% ROS on participating SKUs vs last year/control by retailer.')
+    measurementLines.push('Primary KPI — Incremental unit sales vs last year/control across participating retailers.')
   }
   const measurementHtml = measurementLines.length
     ? `<div class="callout callout-measurement"><h4>Measurement</h4><p>${escapeHtml(measurementLines.join('. '))}</p></div>`
     : ''
 
   const extras: string[] = []
-  if (sections['Pack Line']) {
-    extras.push(`<p><strong>Pack line</strong> — ${escapeHtml(sections['Pack Line'])}</p>`)
+  let packLine = sections['Pack Line'] ? ensureChanceLanguage(sections['Pack Line']) : ''
+  if (!packLine && recommendedUpgrade) {
+    const rebuiltPack = buildUpgradeHookLine(recommendedUpgrade, brandName, 'pack')
+    if (rebuiltPack) packLine = ensureChanceLanguage(rebuiltPack)
   }
-  if (sections['Staff Line']) {
-    extras.push(`<p><strong>Staff line</strong> — ${escapeHtml(sections['Staff Line'])}</p>`)
+  let staffLine = sections['Staff Line'] ? ensureChanceLanguage(sections['Staff Line']) : ''
+  if (!staffLine && recommendedUpgrade) {
+    const rebuiltStaff = buildUpgradeHookLine(recommendedUpgrade, brandName, 'staff')
+    if (rebuiltStaff) staffLine = ensureChanceLanguage(rebuiltStaff)
+  }
+  const packGuarantee = buildGuaranteedValueSentence(spec, 'pack')
+  if (packGuarantee) {
+    packLine = packLine ? `${packLine}. ${packGuarantee}` : packGuarantee
+  }
+  const staffGuarantee = buildGuaranteedValueSentence(spec, 'staff')
+  if (staffGuarantee) {
+    staffLine = staffLine ? `${staffLine}. ${staffGuarantee}` : staffGuarantee
+  }
+  if (packLine) {
+    extras.push(`<p><strong>Pack line</strong> — ${escapeHtml(packLine)}</p>`)
+  }
+  if (staffLine) {
+    extras.push(`<p><strong>Staff line</strong> — ${escapeHtml(staffLine)}</p>`)
+  }
+  const brandHostLine = buildBrandHostLine(spec, brandName)
+  if (brandHostLine) {
+    extras.push(`<p><strong>Brand host</strong> — ${escapeHtml(brandHostLine)}</p>`)
+  }
+  if (recommendedUpgrade) {
+                       const ladderLine = describeUpgradeValueHeadline(recommendedUpgrade)
+    if (ladderLine) {
+      extras.push(`<p><strong>Value headline</strong> — ${escapeHtml(ladderLine)}</p>`)
+    }
   }
 
   const roomHtml = renderMultiAgentRoomHtml(meta?.multiAgentEvaluation)
-  const upgradeHtml = renderMultiAgentImprovementHtml(meta?.multiAgentImprovement)
+  const upgradeHtml = renderMultiAgentImprovementHtml(meta?.multiAgentImprovement, meta)
 
-  return [chipsHtml, roomHtml, upgradeHtml, decisionHtml, reasonsHtml, focusGrid, measurementHtml, fixPlanHtml, extras.join('')].filter(Boolean).join('')
+  return [chipsHtml, roomHtml, upgradeHtml, decisionHtml, narrativeHtml, legacyHtml, measurementHtml, extras.join('')]
+    .filter(Boolean)
+    .join('')
 }
 
-function deriveWorstStatus(statuses: Array<string | undefined | null>): string | undefined {
-  const order: Record<string, number> = { RED: 0, AMBER: 1, GREEN: 2 }
-  let current: { status: string; score: number } | null = null
-  for (const status of statuses) {
-    const normalized = String(status || '').toUpperCase()
-    if (!normalized || !(normalized in order)) continue
-    const value = order[normalized]
-    if (!current || value < current.score) {
-      current = { status: normalized, score: value }
+const SCOREBOARD_PROSE_FIELDS: Array<[string, string]> = [
+  ['objectiveFit', 'Objective fit'],
+  ['hookStrength', 'Hook strength'],
+  ['mechanicFit', 'Mechanic fit'],
+  ['frequencyPotential', 'Cadence & odds'],
+  ['rewardShape', 'Value promise'],
+  ['friction', 'Entry friction'],
+  ['retailerReadiness', 'Retail readiness'],
+  ['fulfilment', 'Fulfilment'],
+  ['complianceRisk', 'Compliance risk'],
+  ['kpiRealism', 'KPI realism'],
+]
+
+function renderEvaluationFallbackProse(scoreboard: any, sections: Record<string, string>) {
+  const paragraphs: string[] = []
+  if (sections['Why It Works']) {
+    paragraphs.push(`<p><strong>Why it works</strong> — ${escapeHtml(sections['Why It Works'])}</p>`)
+  }
+  if (sections['Where It Breaks']) {
+    paragraphs.push(`<p><strong>Where it breaks</strong> — ${escapeHtml(sections['Where It Breaks'])}</p>`)
+  }
+  if (!scoreboard) {
+    return paragraphs.length ? `<div class="evaluation-prose">${paragraphs.join('')}</div>` : ''
+  }
+  for (const [key, label] of SCOREBOARD_PROSE_FIELDS) {
+    const cell = (scoreboard as Record<string, any>)[key]
+    if (!cell) continue
+    const parts = [cell.why, cell.fix].map((line: any) => cleanText(line || '')).filter(Boolean)
+    if (!parts.length) continue
+    paragraphs.push(`<p><strong>${label}</strong> — ${escapeHtml(parts.join(' '))}</p>`)
+  }
+  if (scoreboard.conditions) {
+    paragraphs.push(`<p><strong>Conditions</strong> — ${escapeHtml(String(scoreboard.conditions))}</p>`)
+  }
+  return paragraphs.length ? `<div class="evaluation-prose">${paragraphs.join('')}</div>` : ''
+}
+
+function ensureChanceLanguage(text: string): string {
+  if (!text) return text
+  if (/\bchance\b/i.test(text)) return text
+  if (!/\bwin\b/i.test(text)) return text
+  return text.replace(/\bwin\b/i, (match) => {
+    const replacement = 'chance to win'
+    return match === match.toUpperCase() ? replacement.toUpperCase() : replacement
+  })
+}
+
+function sanitizeHookPrizeLanguage(text: string, hasSharedPrize: boolean): string {
+  let line = ensureChanceLanguage(text)
+  if (!hasSharedPrize) {
+    line = line.replace(/double (movie )?pass(es)?/gi, 'movie ticket')
+    line = line.replace(/\bfor two\b/gi, '')
+  }
+  return line
+}
+
+function sanitizeHookLine(line: string, spec: Record<string, any>): string {
+  if (!line) return ''
+  let output = line.trim()
+  if (!output) return ''
+  if (spec?.assuredValue && /((limited|scarce)[^.!?]*chance)/i.test(output)) {
+    output = output.replace(/[-–—,]*\s*(limited|scarce)[^.!?]*chance[s]?/gi, '').trim()
+  }
+  output = output.replace(/\s+/g, ' ').trim()
+  if (output.length < 25) return ''
+  return output
+}
+
+function sanitizeValueLedLine(line: string, meta: any): string {
+  if (!line) return ''
+  if (!meta?.simpleLadderPreferred) return line
+  if (/(runner|cadence|instant win|weekly prize)/i.test(line)) {
+    return 'Keep the hero overlay as a limited premium draw layered on top of the guaranteed cashback.'
+  }
+  return line
+}
+
+function buildBrandHostLine(spec: any, brand: string): string | null {
+  const brandName = brand || spec?.brand || spec?.clientName || ''
+  if (!brandName) return null
+  const occasion =
+    spec?.ipTieIn?.franchise ||
+    spec?.ip ||
+    spec?.calendarTheme ||
+    spec?.occasion ||
+    ''
+  const category = String(spec?.category || spec?.typeOfPromotion || 'brand').toLowerCase()
+  if (category.includes('appliance')) {
+    if (occasion) return `${brandName} is the appliance brand your ${occasion.toLowerCase()} nights run on.`
+    return `${brandName} keeps your kitchen running when the cooking stakes are high.`
+  }
+  if (category.includes('wine') || category.includes('beer') || category.includes('spirit')) {
+    if (occasion) return `${brandName} is the drink you put on the table for your ${occasion} night.`
+    return `${brandName} is the bottle that completes the occasion.`
+  }
+  if (occasion) return `${brandName} is the ${spec?.category || 'brand'} you put on the table for your ${occasion} night.`
+  return `${brandName} is the ${spec?.category || 'brand'} that completes the occasion.`
+}
+
+function pickRecommendedUpgradeOption(improvement: any) {
+  const road = improvement?.bruce
+  if (!road) return null
+  const options = Array.isArray(road.upgrade_options) ? road.upgrade_options : []
+  if (!options.length) return null
+  const preferred = road.recommended_option_label || null
+  return options.find((opt: any) => preferred && opt?.label === preferred) || options[0]
+}
+
+function normalizeUpgradeOption(option: any | null, spec: Record<string, any>) {
+  if (!option) return null
+  const normalized = { ...option }
+  const assuredBase = Boolean(spec?.assuredValue || spec?.gwp)
+  if (assuredBase) {
+    if (normalized.mechanic && /\bdraw|winner/i.test(normalized.mechanic)) {
+      normalized.mechanic = normalized.mechanic.replace(/[,;]?\s*(and\s+)?enter[^.]+draw[^.]+/gi, '').trim()
+      normalized.summary =
+        "Lower the pint threshold so more drinkers earn the guaranteed kit without adding extra prize tiers."
     }
+    normalized.hero_overlay = ''
+    normalized.runner_up_prizes = []
   }
-  return current?.status
+  return normalized
 }
 
-function renderEvaluationReasonGrid(values: { works?: string; breaks?: string }) {
-  const cards: string[] = []
-  if (values.works) {
-    cards.push(
-      `<div class="evaluation-reason"><h4>Why it works</h4><p>${escapeHtml(values.works)}</p></div>`
-    )
+function renderUpgradeNarrativeFromOption(option: any): string {
+  if (!option) return ''
+  const pieces: string[] = []
+  const title = option.label ? `${option.label} upgrade` : 'Recommended upgrade'
+  const summary = option.summary ? ` — ${option.summary}` : ''
+  pieces.push(`<p><strong>${escapeHtml(title)}</strong>${escapeHtml(summary)}</p>`)
+  if (option.mechanic) {
+    pieces.push(`<p><strong>Mechanic</strong> — ${escapeHtml(option.mechanic)}</p>`)
   }
-  if (values.breaks) {
-    cards.push(
-      `<div class="evaluation-reason"><h4>Where it breaks</h4><p>${escapeHtml(values.breaks)}</p></div>`
-    )
+  const hero = describeHeroTierFromOption(option)
+  if (hero) {
+    pieces.push(`<p><strong>Hero prize</strong> — ${escapeHtml(hero)}</p>`)
   }
-  if (!cards.length) return ''
-  return `<div class="evaluation-reason-grid">${cards.join('')}</div>`
+  const runners = describeRunnerTierFromOption(option)
+  if (runners.length) {
+    pieces.push(`<p><strong>Runner-ups</strong> — ${escapeHtml(runners.join('; '))}</p>`)
+  }
+  if (option.trade_incentive) {
+    pieces.push(`<p><strong>Trade</strong> — ${escapeHtml(option.trade_incentive)}</p>`)
+  }
+  if (Array.isArray(option.hooks) && option.hooks.length) {
+    pieces.push(`<p><strong>Hook focus</strong> — ${escapeHtml(String(option.hooks[0]))}</p>`)
+  }
+  return pieces.length ? `<div class="evaluation-prose">${pieces.join('')}</div>` : ''
 }
 
-function renderEvaluationFocusCard(options: {
-  title: string
-  status?: string
-  lead?: string
-  summary?: string
-  fix?: string
-  listTitle?: string
-  list?: string[]
-  tail?: string
-}) {
-  const { title, status, lead, summary, fix, listTitle, list, tail } = options
-  const content: string[] = []
-  if (lead) content.push(`<p class="evaluation-focus-lead">${escapeHtml(lead)}</p>`)
-  if (summary) content.push(`<p>${escapeHtml(summary)}</p>`)
-  if (fix) content.push(`<p class="evaluation-focus-fix">${escapeHtml(fix)}</p>`)
-  if (tail && tail !== fix) content.push(`<p class="evaluation-focus-tail">${escapeHtml(tail)}</p>`)
-  const listHtml =
-    list && list.length
-      ? `<div class="evaluation-focus-list"><strong>${escapeHtml(listTitle || 'Details')}</strong><ul>${list
-          .map((item) => `<li>${escapeHtml(item)}</li>`)
-          .join('')}</ul></div>`
+function describeHeroTierFromOption(option: any): string | null {
+  if (!option) return null
+  const heroCountRaw = Number(option?.offer?.major_prizes)
+  const heroCount = Number.isFinite(heroCountRaw) ? heroCountRaw : null
+  const heroLabel = cleanText(option?.hero_overlay || option?.summary || '')
+  if (!heroCount && !heroLabel) return null
+  const bits: string[] = []
+  if (heroCount) {
+    bits.push(`${formatCount(heroCount)} winner${heroCount === 1 ? '' : 's'}`)
+  }
+  if (heroLabel) {
+    bits.push(heroLabel)
+  }
+  return bits.join(' — ')
+}
+
+function describeRunnerTierFromOption(option: any): string[] {
+  const prizes = Array.isArray(option?.runner_up_prizes) ? option.runner_up_prizes : []
+  const lines: string[] = []
+  for (const prize of prizes) {
+    const count = typeof prize?.count === 'number' && Number.isFinite(Number(prize.count)) ? Number(prize.count) : null
+    const desc = cleanText(prize?.description || '')
+    const value =
+      typeof prize?.value === 'number' && Number.isFinite(prize.value) ? `$${Math.round(prize.value).toLocaleString('en-US')}` : ''
+    const parts: string[] = []
+    if (count) parts.push(`${formatCount(count)}×`)
+    if (desc) parts.push(desc)
+    if (value) parts.push(value)
+    if (!parts.length) continue
+    lines.push(parts.join(' '))
+  }
+  return lines.slice(0, 3)
+}
+
+function describeRunnerHeadline(option: any): string | null {
+  const prizes = Array.isArray(option?.runner_up_prizes) ? option.runner_up_prizes : []
+  if (!prizes.length) return null
+  const primary = prizes[0]
+  const count =
+    typeof primary?.count === 'number' && Number.isFinite(primary.count) ? `${formatCount(primary.count)}× ` : ''
+  const desc = cleanText(primary?.description || '')
+  const label = (count || desc) ? `${count || ''}${desc || 'runner-up prizes'}`.trim() : ''
+  return label || null
+}
+
+function buildUpgradeHookLine(option: any, brandName: string, audience: 'pack' | 'staff'): string | null {
+  if (!option) return null
+  const heroLabel = cleanText(option?.hero_overlay || option?.summary || '')
+  const runnerHeadline = describeRunnerHeadline(option)
+  const brand = brandName ? `${brandName} ` : ''
+  const subject = audience === 'staff' ? 'Sell' : 'Buy'
+  const hookParts = [`${subject} ${brand || 'the participating range'} for a chance to win ${heroLabel || 'the hero prize'}`]
+  if (runnerHeadline) {
+    hookParts.push(`plus ${runnerHeadline}`)
+  }
+  return hookParts.join(' ')
+}
+
+function describeUpgradeValueHeadline(option: any): string | null {
+  if (!option) return null
+  const hero = describeHeroTierFromOption(option)
+  const runner = describeRunnerHeadline(option)
+  if (!hero && !runner) return null
+  return [hero, runner ? runner : null].filter(Boolean).join(' • ')
+}
+
+function buildGuaranteedValueSentence(spec: Record<string, any>, audience: 'pack' | 'staff'): string | null {
+  if (!spec?.assuredValue) return null
+  const noun = audience === 'staff' ? 'customer' : 'purchase'
+  const capRaw = spec?.cashback?.cap
+  const capText =
+    capRaw && String(capRaw).trim().toUpperCase() !== 'UNLIMITED'
+      ? ` (capped at ${String(capRaw).trim()})`
       : ''
-  if (!content.length && !listHtml) return ''
-  const badge = describeTrafficStatus(status)
-  return `<article class="evaluation-focus">
-    <div class="evaluation-focus-header">
-      <h4>${escapeHtml(title)}</h4>
-      ${badge ? `<span class="evaluation-pill ${badge.className}">${badge.label}</span>` : ''}
-    </div>
-    ${content.join('')}
-    ${listHtml}
-  </article>`
-}
-
-function describeTrafficStatus(status?: string | null) {
-  if (!status) return null
-  const normalized = String(status).toUpperCase()
-  const labels: Record<string, string> = {
-    GREEN: 'On brief',
-    AMBER: 'Needs tighten',
-    RED: 'Off brief',
+  const amount = Number(spec?.cashback?.amount || 0)
+  if (amount > 0) {
+    return `Guaranteed $${Math.round(amount)} cashback for every eligible ${noun}${capText}.`
   }
-  return labels[normalized]
-    ? { label: labels[normalized], className: `is-${normalized.toLowerCase()}` }
-    : null
+  const assuredItem = Array.isArray(spec?.assuredItems) && spec.assuredItems.length ? spec.assuredItems[0] : ''
+  if (assuredItem) {
+    return `Guaranteed reward for every eligible ${noun}: ${assuredItem}.`
+  }
+  return `Guaranteed reward for every eligible ${noun}.`
 }
 
 function prettifyScoreboardKey(key: string): string {
@@ -1970,25 +3086,6 @@ function extractRiskLines(board: any): string[] {
       return `${prettifyScoreboardKey(key)} — ${why}`
     })
     .filter((line): line is string => Boolean(line))
-}
-
-function collectConditionLines(board: any): string[] {
-  if (!board || typeof board !== 'object') return []
-  const out: string[] = []
-  for (const [key, value] of Object.entries(board as Record<string, any>)) {
-    if (['decision', 'conditions', 'measurement'].includes(key)) continue
-    const status = String(value?.status || '').toUpperCase()
-    if (!status || status === 'GREEN') continue
-    const fix = cleanText(value?.fix || '')
-    const why = cleanText(value?.why || '')
-    if (fix) {
-      out.push(`${prettifyScoreboardKey(key)} — ${fix}`)
-    } else if (why) {
-      out.push(`${prettifyScoreboardKey(key)} — ${why}`)
-    }
-    if (out.length >= 4) break
-  }
-  return dedupeStrings(out)
 }
 
 function formatDate(input: any): string | null {
@@ -2708,19 +3805,6 @@ function buildHtmlDocument(model: SummaryModel) {
     )
     .join('')
 
-  const servicesSection = `<article id="trevor-services" class="content-section services-callout">
-  <header class="section-header">
-    <span class="section-index">TS</span>
-    <h2>Partnering With Trevor Services</h2>
-  </header>
-  <div class="section-body">
-    <p><strong>Trevor Services&trade;</strong> is a digital competition and sales promotion platform which allows brands, agencies and media owners to deliver mobile and digital promotions globally, whilst being managed centrally.</p>
-    <p>Trevor Services&trade; provides the engine and mechanisms to get your most complex promotional campaigns in-market and engaging your customers.</p>
-    <p>With our robust promotional platform, your promotion is guaranteed to be 100% compliant. Trevor Services&trade; technology operates stand-alone or as an integrated solution within a partner CMS environment.</p>
-    <p>Speak with Mark Alexander at <a href="mailto:mark@trevor.services">mark@trevor.services</a> to bring Trevor Services&trade; into your next activation.</p>
-  </div>
-</article>`
-
   const tocHtml = numberedSections.length
     ? `<section class="page contents">
   <div class="section-label">Inside this dossier</div>
@@ -2745,32 +3829,6 @@ function buildHtmlDocument(model: SummaryModel) {
       )
       .join('')}
   </div>`
-    : ''
-
-  const controlsHtml = numberedSections.length
-    ? `<section class="page controls-panel">
-  <div class="controls-panel__inner">
-    <div class="controls-panel__head">
-      <div class="controls-panel__title">Curate this export</div>
-      <div class="controls-panel__actions">
-        <button type="button" data-toggle-action="all" aria-label="Select all sections">Select all</button>
-        <button type="button" data-toggle-action="none" aria-label="Clear all sections">Clear all</button>
-      </div>
-    </div>
-    <div class="controls-panel__grid">
-      ${numberedSections
-        .map(
-          (section) =>
-            `<label class="controls-panel__option">
-        <input type="checkbox" data-toggle-target="${section.id}" checked />
-        <span>${escapeHtml(section.title)}</span>
-      </label>`
-        )
-        .join('')}
-    </div>
-    <p class="controls-panel__note">Untick any sections you don't need. Hidden sections disappear from the contents page and the final PDF.</p>
-  </div>
-</section>`
     : ''
 
   return `<!doctype html>
@@ -2811,17 +3869,6 @@ body{margin:0;background:var(--canvas);font-family:"IBM Plex Sans","Inter","Sego
 .contents li span{width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,var(--accent),rgba(14,165,233,0.18));display:flex;align-items:center;justify-content:center;color:#0f172a;font-weight:600;letter-spacing:0.08em;}
   .contents li a{text-decoration:none;color:inherit;}
   .contents li:last-child{border-bottom:none;}
-  .controls-panel{background:var(--paper);padding:30px;border-radius:20px;border:1px solid rgba(15,23,42,0.08);box-shadow:0 18px 36px rgba(15,23,42,0.04);page-break-inside:avoid;}
-  .controls-panel__inner{display:flex;flex-direction:column;gap:22px;}
-  .controls-panel__head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;}
-  .controls-panel__title{font-size:18px;font-weight:600;color:var(--ink);}
-  .controls-panel__actions{display:flex;gap:10px;}
-  .controls-panel__actions button{border:1px solid rgba(14,165,233,0.32);background:rgba(14,165,233,0.12);color:#0369a1;font-size:13px;letter-spacing:0.08em;text-transform:uppercase;padding:8px 12px;border-radius:999px;cursor:pointer;font-weight:600;}
-  .controls-panel__actions button:hover{background:rgba(14,165,233,0.18);}
-  .controls-panel__grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;}
-  .controls-panel__option{display:flex;align-items:center;gap:10px;border:1px solid rgba(15,23,42,0.1);border-radius:14px;padding:10px 14px;background:#f7f9fc;cursor:pointer;font-size:14px;color:var(--ink);}
-  .controls-panel__option input{width:18px;height:18px;border-radius:4px;border:1px solid rgba(15,23,42,0.2);}
-  .controls-panel__note{margin:0;font-size:13px;color:#64748b;}
   .content-section{background:var(--paper);padding:36px;border:1px solid rgba(15,23,42,0.08);border-radius:20px;margin-bottom:28px;page-break-inside:avoid;box-shadow:0 12px 26px rgba(15,23,42,0.04);}
   .content-section.is-lead{border-color:rgba(14,165,233,0.35);box-shadow:0 18px 36px rgba(14,165,233,0.08);}
   .content-section.is-hidden{display:none !important;}
@@ -3006,7 +4053,6 @@ footer a{color:inherit;text-decoration:none;border-bottom:1px solid rgba(148,163
   .cover::after{display:none;}
   .cover-chip{background:#f8fafc;border:1px solid rgba(148,163,184,0.35);}
   .chip{border:1px solid rgba(148,163,184,0.5);color:var(--muted);background:rgba(148,163,184,0.1);}
-  .controls-panel{display:none !important;}
   footer{margin-top:24px;}
   .content-section{page-break-inside:avoid;}
 }
@@ -3032,66 +4078,21 @@ footer a{color:inherit;text-decoration:none;border-bottom:1px solid rgba(148,163
     </div>
   </section>
   ${tocHtml}
-  ${controlsHtml}
   <main>
     ${sectionsHtml}
-    ${servicesSection}
   </main>
+  <section class="page services-callout">
+    <div class="section-body">
+      <p><strong>Mark Alexander</strong> — <a href="mailto:mark@trevor.services">mark@trevor.services</a></p>
+      <p>Generated by Trudy • ${escapeHtml(model.meta.campaignId)}</p>
+    </div>
+  </section>
   <footer>
     <strong>Trevor Services</strong>
-    Generated by Trudy • ${escapeHtml(model.meta.campaignId)} • Mark Alexander · <a href="mailto:mark@trevor.services">mark@trevor.services</a>
+    ${escapeHtml(model.meta.documentTitle)}
   </footer>
 </div>
 </body>
-<script>
-const TrudyExportToggles = (() => {
-  const checkboxSelector = '[data-toggle-target]'
-  const checkboxes = Array.from(document.querySelectorAll(checkboxSelector))
-  if (!checkboxes.length) return
-
-  const map = new Map()
-  checkboxes.forEach((checkbox) => {
-    const targetId = checkbox.getAttribute('data-toggle-target')
-    if (!targetId) return
-    const section = document.querySelector(\`[data-section-id=\"\${targetId}\"]\`)
-    const tocItem = document.querySelector(\`.contents li[data-section-id=\"\${targetId}\"]\`)
-    map.set(checkbox, { section, tocItem })
-  })
-
-  const sync = () => {
-    let hiddenCount = 0
-    map.forEach(({ section, tocItem }, checkbox) => {
-      const checked = checkbox.checked
-      if (!checked) hiddenCount += 1
-      if (section) section.classList.toggle('is-hidden', !checked)
-      if (tocItem) tocItem.classList.toggle('is-hidden', !checked)
-    })
-    document.body.classList.toggle('has-hidden-sections', hiddenCount > 0)
-  }
-
-  map.forEach((_, checkbox) => {
-    checkbox.addEventListener('change', sync)
-  })
-  sync()
-
-  const handleAction = (action) => {
-    const shouldCheck = action === 'all'
-    map.forEach((_, checkbox) => {
-      checkbox.checked = shouldCheck
-    })
-    sync()
-  }
-
-  document.addEventListener('click', (event) => {
-    const target = event.target
-    if (!(target instanceof HTMLElement)) return
-    const action = target.getAttribute('data-toggle-action')
-    if (!action) return
-    event.preventDefault()
-    handleAction(action)
-  })
-})()
-</script>
 </html>`
 }
 function renderScoreboard(board: any) {

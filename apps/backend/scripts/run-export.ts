@@ -7,7 +7,7 @@ import { createRequire } from 'module'
 import puppeteer from 'puppeteer'
 import { prisma } from '../src/db/prisma.js'
 import { collectExportSnapshot } from '../src/export/snapshot.js'
-import { renderExportHtml } from '../src/export/render-html.js'
+import { renderClientDeck } from '../src/export/render-html.js'
 import type { SummaryModel } from '../src/export/render-html.js'
 import { runJudge } from '../src/lib/orchestrator/judge.js'
 import { writeCampaignMemory } from '../src/lib/memory-store.js'
@@ -51,7 +51,7 @@ async function main() {
   })
 
   const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19)
-  let { html, title, model } = renderExportHtml(snapshot, {
+  let { html, title, model } = renderClientDeck(snapshot, {
     sections: options.sections || {},
     theme: options.theme || {},
     judgeVerdict,

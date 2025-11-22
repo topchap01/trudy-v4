@@ -29,6 +29,7 @@ import {
   type OfferState,
   type MultiAgentMeta,
   type SpecialistAgentOutput,
+  type OfferIQImproveOutput,
 } from './evaluate-room.js'
 
 const LAW_CUES_EVALUATE = [
@@ -125,6 +126,71 @@ function toNumber(value: any): number | null {
   return null
 }
 
+function hasMeaningfulCashbackPayload(cashback: any): boolean {
+  if (!cashback || typeof cashback !== 'object') return false
+  const amount =
+    toNumber(cashback.amount ?? cashback.basePayout ?? cashback.topPayout ?? null) || 0
+  if (amount > 0) return true
+  const percent = toNumber(cashback.percent ?? null) || 0
+  if (percent > 0) return true
+  const odds = typeof cashback.odds === 'string' && cashback.odds.trim().length > 0
+  if (odds) return true
+  const processing =
+    cashback.processingDays != null && String(cashback.processingDays).trim().length > 0
+  if (processing) return true
+  const cap =
+    cashback.cap != null && String(cashback.cap).trim().length > 0 && String(cashback.cap).trim().toUpperCase() !== 'UNLIMITED'
+  if (cap) return true
+  const headline = typeof cashback.headline === 'string' && cashback.headline.trim().length > 0
+  if (headline) return true
+  const hasBands = Array.isArray((cashback as any).bands) && (cashback as any).bands.length > 0
+  if (hasBands) return true
+  return false
+}
+
+function normalizeBriefSpec(raw: any): any {
+  if (!raw) return {}
+  const spec = JSON.parse(JSON.stringify(raw))
+  if (!hasMeaningfulCashbackPayload(spec.cashback)) {
+    delete spec.cashback
+  }
+  return spec
+}
+
+const GUARANTEE_REGEX = /\bguarantee/i
+
+function textMentionsGuarantee(value: any): boolean {
+  if (!value) return false
+  if (Array.isArray(value)) return value.some((entry) => textMentionsGuarantee(entry))
+  return GUARANTEE_REGEX.test(String(value || ''))
+}
+
+function agentRequestsGuarantee(agent?: SpecialistAgentOutput | null): boolean {
+  if (!agent) return false
+  return (
+    textMentionsGuarantee(agent.headline) ||
+    textMentionsGuarantee(agent.notes_for_bruce) ||
+    textMentionsGuarantee(agent.key_points) ||
+    textMentionsGuarantee(agent.must_fix)
+  )
+}
+
+function detectGuaranteeFlag(
+  evaluation: MultiAgentEvaluationResult | null,
+  scoreboard: Scoreboard | null,
+  offerState: OfferState
+): boolean {
+  if (offerState.has_guaranteed_reward) return false
+  const boardCue =
+    textMentionsGuarantee(scoreboard?.rewardShape?.why) || textMentionsGuarantee(scoreboard?.rewardShape?.fix)
+  if (boardCue) return true
+  if (!evaluation) return false
+  if (agentRequestsGuarantee(evaluation.agents?.find((agent) => agent.agent === 'OfferIQ'))) return true
+  if (evaluation.agents?.some((agent) => agentRequestsGuarantee(agent))) return true
+  if (textMentionsGuarantee(evaluation.bruce?.must_fix_items)) return true
+  return false
+}
+
 function cleanPrizeLabel(input: string | null | undefined): string | null {
   if (!input) return null
   const trimmed = String(input)
@@ -173,6 +239,16 @@ function inferPrizeFromText(text: string): string | null {
     }
   }
   return null
+}
+
+const STALE_NARRATIVE_PATTERNS = [/CREATE_UNBOXED/gi, /cinema escape/gi, /personaliz(?:ed|ation).*cinema/i]
+
+function stripStaleNarrativeBlocks(text: string): string {
+  if (!text) return text
+  return text
+    .split('\n')
+    .filter((line) => !STALE_NARRATIVE_PATTERNS.some((pattern) => pattern.test(line)))
+    .join('\n')
 }
 
 function inferPrizeLabel(spec: any): string | null {
@@ -272,14 +348,75 @@ function deriveEntryThreshold(spec: any): { type: 'units' | 'spend' | 'visits' |
   return { type: null, value: null }
 }
 
+type TradeControls = {
+  tradeBudgetValue: number | null
+  tradeBudgetMode: 'DISABLED' | 'HARD_CAP' | 'FLEXIBLE'
+  tradeIncentiveBrief: string | null
+  tradeRequested: boolean
+}
+
+function deriveTradeControls(spec: any): TradeControls {
+  const tradeNotes: string[] = []
+  if (spec?.tradeIncentive) {
+    tradeNotes.push(String(spec.tradeIncentive).trim())
+  }
+  if (spec?.tradeIncentiveSpec) {
+    const specParts = [spec.tradeIncentiveSpec?.audience, spec.tradeIncentiveSpec?.reward, spec.tradeIncentiveSpec?.guardrail]
+      .map((part: any) => (typeof part === 'string' ? part.trim() : ''))
+      .filter(Boolean)
+    if (specParts.length) {
+      tradeNotes.push(specParts.join(' → '))
+    }
+  }
+  const tradeRequested = tradeNotes.some(Boolean)
+  const tradeBudgetValue = toNumber(
+    spec?.tradeBudget ??
+      spec?.tradeBudgetValue ??
+      spec?.tradeIncentiveBudget ??
+      (spec?.tradeIncentiveSpec ? spec.tradeIncentiveSpec.budget : null)
+  )
+  const tradeBudgetModeRaw = String(spec?.tradeBudgetMode || '').toUpperCase()
+  let tradeBudgetMode: TradeControls['tradeBudgetMode'] = 'DISABLED'
+  if (tradeBudgetModeRaw === 'FLEXIBLE') {
+    tradeBudgetMode = 'FLEXIBLE'
+  } else if (tradeBudgetModeRaw === 'HARD_CAP') {
+    tradeBudgetMode = 'HARD_CAP'
+  } else if (tradeBudgetModeRaw === 'DISABLED') {
+    tradeBudgetMode = 'DISABLED'
+  } else if (tradeBudgetValue != null) {
+    tradeBudgetMode = 'HARD_CAP'
+  } else if (tradeRequested) {
+    tradeBudgetMode = 'FLEXIBLE'
+  }
+  if (!tradeRequested && tradeBudgetValue == null && tradeBudgetMode !== 'DISABLED') {
+    tradeBudgetMode = 'DISABLED'
+  }
+  const tradeIncentiveBrief =
+    tradeNotes
+      .map((line) => line.replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .join(' — ') || null
+  return {
+    tradeBudgetValue: tradeBudgetValue ?? null,
+    tradeBudgetMode,
+    tradeIncentiveBrief,
+    tradeRequested,
+  }
+}
+
 function buildOfferState(spec: any): OfferState {
+  const tradeControls = deriveTradeControls(spec)
   const baseValue: OfferState['base_value'] = { type: 'none', amount: null }
-  if (spec?.cashback) {
+  const promoType = String(spec?.typeOfPromotion || '').toUpperCase()
+  const isGwpPromo =
+    promoType === 'GWP' ||
+    Boolean(spec?.gwp && (spec.gwp.item || spec.gwp.triggerQty != null || spec.gwp.cap != null))
+  if (spec?.cashback && hasMeaningfulCashbackPayload(spec.cashback)) {
     baseValue.type = 'cashback'
     baseValue.amount = toNumber(spec.cashback.amount ?? spec.cashback.percent ?? null)
-  } else if (spec?.gwp) {
+  } else if (isGwpPromo) {
     baseValue.type = 'gwp'
-    baseValue.amount = toNumber(spec.gwp.value ?? spec.gwp.amount ?? null)
+    baseValue.amount = toNumber(spec?.gwp?.value ?? spec?.gwp?.amount ?? spec?.gwp?.rrp ?? null)
   } else if (Array.isArray(spec?.assuredItems) && spec.assuredItems.length) {
     baseValue.type = 'gwp'
   } else if (spec?.priceOff) {
@@ -314,14 +451,20 @@ function buildOfferState(spec: any): OfferState {
     }
   }
   if (!runner_up_prizes.length) {
-    for (const raw of toStringArray(spec?.runnerUps)) {
+    for (const rawValue of toStringArray(spec?.runnerUps)) {
+      const raw = rawValue.trim()
+      if (!raw || /^0+$/.test(raw)) continue
       const countMatch = raw.match(/(\d[\d,]*)/)
       const count = countMatch ? toNumber(countMatch[1]) : null
-      const label = cleanPrizeLabel(raw.replace(/(\d[\d,]*)(x|×)?/i, '').trim()) || cleanPrizeLabel(raw)
-      if (label) runner_up_prizes.push({ label, count, value: null })
+      const stripped = raw.replace(/(\d[\d,]*)(x|×)?/i, '').trim()
+      const label = cleanPrizeLabel(stripped) || cleanPrizeLabel(raw)
+      if (!label) continue
+      if (!stripped && (count == null || count === 0)) continue
+      runner_up_prizes.push({ label, count, value: null })
     }
   }
 
+  const rewardPosture = String(spec?.rewardPosture || '').toUpperCase()
   const heroCount = toNumber(spec?.heroPrizeCount ?? null) || 0
   const breadthCount = toNumber(spec?.breadthPrizeCount ?? null)
   const totalWinnerCount = toNumber(spec?.totalWinners ?? spec?.breadthPrizeCount ?? null)
@@ -331,7 +474,16 @@ function buildOfferState(spec: any): OfferState {
       : totalWinnerCount != null
         ? Math.max(0, totalWinnerCount - heroCount)
         : null
-  if (!runner_up_prizes.length && fallbackRunnerCount && fallbackRunnerCount > 0) {
+  const hasHeroOverlay = Boolean(heroPrize || overlayLabel)
+  const hasAssuredBase =
+    (baseValue.type === 'cashback' && typeof baseValue.amount === 'number' && baseValue.amount > 0) ||
+    Boolean(spec?.assuredValue)
+  const preferSimpleLadder =
+    (rewardPosture === 'ASSURED' && hasAssuredBase && (hasHeroOverlay || isGwpPromo)) ||
+    (isGwpPromo && !hasHeroOverlay)
+  if (preferSimpleLadder) {
+    runner_up_prizes.length = 0
+  } else if (!runner_up_prizes.length && fallbackRunnerCount && fallbackRunnerCount > 0) {
     const inferredLabel = inferPrizeLabel(spec) || 'Instant prize'
     runner_up_prizes.push({
       label: inferredLabel,
@@ -345,6 +497,16 @@ function buildOfferState(spec: any): OfferState {
       spec?.assuredValue ||
       (Array.isArray(spec?.assuredItems) && spec.assuredItems.length)
   )
+  const totalPrizeBudget = toNumber(spec?.prizePoolValue ?? spec?.prizeBudget ?? null)
+  const budgetModeRaw = String(spec?.prizeBudgetMode || '').toUpperCase()
+  const budgetMode: OfferState['budget_mode'] =
+    budgetModeRaw === 'FLEXIBLE'
+      ? 'FLEXIBLE'
+      : totalPrizeBudget != null
+        ? 'HARD_CAP'
+        : budgetModeRaw === 'HARD_CAP'
+          ? 'HARD_CAP'
+          : null
 
   return {
     base_value: baseValue,
@@ -352,7 +514,110 @@ function buildOfferState(spec: any): OfferState {
     major_prizes,
     runner_up_prizes,
     has_guaranteed_reward: hasGuaranteedReward,
+    total_prize_budget: totalPrizeBudget ?? null,
+    budget_mode: budgetMode,
+    trade_budget: tradeControls.tradeBudgetValue,
+    trade_budget_mode: tradeControls.tradeBudgetMode,
+    trade_incentive_brief: tradeControls.tradeIncentiveBrief,
   }
+}
+
+function enforceSimpleLadderImprovement(
+  improvement: MultiAgentImprovementResult | null,
+  preferSimple: boolean
+): MultiAgentImprovementResult | null {
+  if (!improvement || !preferSimple) return improvement
+  const promoMessage = 'Cashback carries fairness; the hero overlay is a limited premium prize drawn on its own cadence.'
+  const scrubLine = (line?: string | null) => {
+    if (!line) return line
+    return /runner|instant win|weekly prize|cadence/i.test(line) ? promoMessage : line
+  }
+  const scrubArray = (lines?: string[]) =>
+    Array.isArray(lines) ? lines.map((line) => scrubLine(line) || promoMessage).filter(Boolean) : lines
+  const agents = Array.isArray(improvement.agents)
+    ? improvement.agents.map((agent) => {
+        if ((agent as OfferIQImproveOutput)?.agent === 'OfferIQ') {
+          const casted = agent as OfferIQImproveOutput
+          const options = Array.isArray(casted.options)
+            ? casted.options.map((opt) => ({ ...opt, runner_up_prize_count: 0 }))
+            : []
+          casted.must_fix = scrubArray(casted.must_fix)
+          casted.nice_to_have = scrubArray(casted.nice_to_have)
+          casted.notes_for_bruce = scrubLine(casted.notes_for_bruce)
+          return { ...casted, options }
+        }
+        return agent
+      })
+    : improvement.agents
+  const heroOverlayNote = 'Hero overlay — premium bonus tier layered on top of the guaranteed cashback.'
+  const upgrade_options = Array.isArray(improvement.bruce?.upgrade_options)
+    ? improvement.bruce.upgrade_options.map((opt) => ({
+        ...opt,
+        runner_up_prizes: [],
+        hero_overlay: opt.hero_overlay
+          ? `${opt.hero_overlay} (premium bonus tier; cashback carries fairness)`
+          : heroOverlayNote,
+        summary: scrubLine(opt.summary),
+        why_this: scrubArray(opt.why_this),
+      }))
+    : improvement.bruce?.upgrade_options
+  const cadence_summary = Array.isArray(improvement.cadence_summary)
+    ? improvement.cadence_summary.map((entry) => ({
+        ...entry,
+        majors_text: entry.majors_text || 'Hero winners follow a limited cadence (weekly or finale draw)',
+        runners_per_day: null,
+        runners_text: entry.runners_text ? `${entry.runners_text} (suppressed)` : null,
+      }))
+    : improvement.cadence_summary
+  const bruceNotes = improvement.bruce?.notes || ''
+  return {
+    ...improvement,
+    agents,
+    bruce: {
+      ...improvement.bruce,
+      upgrade_options: upgrade_options || improvement.bruce?.upgrade_options || [],
+      notes: scrubLine(bruceNotes),
+    },
+    cadence_summary,
+  }
+}
+
+function sanitizeValueLedHeroEvaluation(
+  result: MultiAgentEvaluationResult | null,
+  meta: MultiAgentMeta
+): MultiAgentEvaluationResult | null {
+  if (!result || meta.promoMode !== 'VALUE_LED_HERO') return result
+  const promoMessage = 'Cashback guarantees value; the hero overlay is a limited premium prize drawn on its own cadence.'
+  const scrubLine = (line?: string | null) => {
+    if (!line) return line
+    return /runner|instant win|weekly prize|cadence/i.test(line) ? promoMessage : line
+  }
+  const scrubArray = (lines?: string[]) =>
+    Array.isArray(lines) ? lines.map((line) => scrubLine(line) || promoMessage).filter(Boolean) : lines
+
+  const agents = Array.isArray(result.agents)
+    ? result.agents.map((agent) => {
+        if (!agent) return agent
+        const clone: SpecialistAgentOutput = { ...agent }
+        if (Array.isArray(clone.key_points)) clone.key_points = scrubArray(clone.key_points)
+        if (Array.isArray(clone.must_fix)) clone.must_fix = scrubArray(clone.must_fix)
+        if (Array.isArray(clone.nice_to_have)) clone.nice_to_have = scrubArray(clone.nice_to_have)
+        if (clone.notes_for_bruce) clone.notes_for_bruce = scrubLine(clone.notes_for_bruce)
+        return clone
+      })
+    : result.agents
+
+  const bruce = result.bruce
+    ? {
+        ...result.bruce,
+        top_reasons: scrubArray(result.bruce.top_reasons || []),
+        must_fix_items: scrubArray(result.bruce.must_fix_items || []),
+        quick_wins: scrubArray(result.bruce.quick_wins || []),
+        notes: scrubLine(result.bruce.notes),
+      }
+    : result.bruce
+
+  return { ...result, agents, bruce }
 }
 
 function buildMultiAgentBrief(ctx: CampaignContext): string {
@@ -473,11 +738,47 @@ function buildMultiAgentInput(ctx: CampaignContext, constitutionText: string): M
   const spec = ctx.briefSpec || {}
   const durationDays = computeDurationDays(ctx)
   const totalPrizes = toNumber(spec?.totalWinners ?? spec?.breadthPrizeCount ?? null)
-  const cadenceInfo = computeCadenceInfo(totalPrizes, durationDays)
+  const cadenceInfoRaw = computeCadenceInfo(totalPrizes, durationDays)
   const inferredPrizeLabel = inferPrizeLabel(spec)
   const massWinnerThreshold = Number(process.env.MASS_WINNER_MIN ?? 80)
   const massWinnerCount = totalPrizes && totalPrizes >= massWinnerThreshold ? totalPrizes : null
   const prizePoolValue = toNumber(spec?.prizePoolValue ?? null)
+  const budgetModeRaw = String(spec?.prizeBudgetMode || '').toUpperCase()
+  const budgetMode: MultiAgentMeta['budgetMode'] =
+    budgetModeRaw === 'FLEXIBLE'
+      ? 'FLEXIBLE'
+      : budgetModeRaw === 'HARD_CAP'
+        ? 'HARD_CAP'
+        : prizePoolValue != null
+          ? 'HARD_CAP'
+          : null
+  const tradeControls = deriveTradeControls(spec)
+  const strongAssuredBase =
+    String(spec.rewardPosture || '').toUpperCase() === 'ASSURED' &&
+    (toNumber(spec?.cashback?.amount ?? spec?.assuredValue ?? null) || 0) > 0
+  const hasHeroOverlay =
+    typeof spec.majorPrizeOverlay === 'string' && spec.majorPrizeOverlay.trim()
+      ? true
+      : typeof spec.heroPrize === 'string' && spec.heroPrize.trim()
+  const cashbackCapValue = spec.cashback?.cap
+  const cashbackCapped =
+    cashbackCapValue != null &&
+    cashbackCapValue !== 'UNLIMITED' &&
+    Number.isFinite(Number(cashbackCapValue)) &&
+    Number(cashbackCapValue) > 0
+  const gwpCapValue = spec.gwp?.cap
+  const gwpCapped =
+    gwpCapValue != null &&
+    gwpCapValue !== 'UNLIMITED' &&
+    Number.isFinite(Number(gwpCapValue)) &&
+    Number(gwpCapValue) > 0
+  const openLiability = strongAssuredBase && !(cashbackCapped || gwpCapped)
+  const preferSimpleLadder = Boolean(strongAssuredBase && hasHeroOverlay)
+  const promoMode: MultiAgentMeta['promoMode'] = preferSimpleLadder ? 'VALUE_LED_HERO' : 'PRIZE_LADDER'
+  const heroRole: MultiAgentMeta['heroRole'] = hasHeroOverlay ? (preferSimpleLadder ? 'THEATRE' : 'ENGAGEMENT') : null
+  const cadenceInfo = preferSimpleLadder
+    ? { label: 'PR_THEATRE', text: 'Hero winners follow their own limited cadence (e.g., weekly or finale draw); cashback is the felt reward.' }
+    : cadenceInfoRaw
   const meta: MultiAgentMeta = {
     durationDays,
     totalPrizes,
@@ -487,6 +788,16 @@ function buildMultiAgentInput(ctx: CampaignContext, constitutionText: string): M
     massWinnerCount,
     massPrizeLabel: massWinnerCount ? inferredPrizeLabel || 'Instant prize' : null,
     prizePoolValue: prizePoolValue ?? null,
+    budgetMode,
+    tradeBudgetMode: tradeControls.tradeBudgetMode,
+    tradeBudgetValue: tradeControls.tradeBudgetValue,
+    tradeIncentiveBrief: tradeControls.tradeIncentiveBrief,
+    prizeTruths: null,
+    promoMode,
+    heroRole,
+    simpleLadderPreferred: preferSimpleLadder,
+    liabilityStatus: strongAssuredBase ? (openLiability ? 'OPEN' : 'CAPPED') : null,
+    hypothesisFlags: null,
   }
   return {
     brief: buildMultiAgentBrief(ctx),
@@ -823,9 +1134,10 @@ async function getLatestTextOutputMulti(campaignId: string, types: string[]) {
 
 function inferTradePriority(ctx: CampaignContext): 'HIGH' | 'LOW' {
   const b = ctx.briefSpec || {}
+  const tradeControls = deriveTradeControls(b)
 
   const hasRetailerList = Array.isArray(b.retailers) && b.retailers.length > 0
-  const hasTradeIncentiveFlag = !!b.tradeIncentive
+  const hasTradeIncentiveFlag = tradeControls.tradeRequested
 
   const channel = String((b as any).channel || '').toUpperCase()
   const requiresStaffAction = Boolean((b as any).requiresStaffAction)
@@ -1500,6 +1812,8 @@ export async function runEvaluate(
   let multiAgentResult: MultiAgentEvaluationResult | null = null
   let multiAgentImprovement: MultiAgentImprovementResult | null = null
 
+  ctx.briefSpec = normalizeBriefSpec(ctx.briefSpec)
+
   // Re-hydrate prior Opinion & Improvement for WarRoom memory and prompt context
   const priorOpinion = await getLatestTextOutputMulti(ctx.id, ['opinionNarrative','opinion'])
   const priorImprovement = await getLatestTextOutputMulti(ctx.id, ['improvementNarrative','improvement'])
@@ -2110,6 +2424,7 @@ If trade is not material, set "trade_priority":"LOW" and omit "trade_table".`
     'Measurement — one sentence naming the single metric watched first.',
     'Pack line — provide a short line in quotes.',
     'Staff line — provide a ≤5 second staff script in quotes.',
+    'Truth check: Pack/Staff lines must mirror the actual prize ladder — say “chance to win” unless the reward is guaranteed, and only promise “double passes / for two” if the briefed rewards genuinely deliver them. If the ladder is single tickets, say “movie ticket” accordingly.',
     'Rules: no other headings, no extra bullets, no filler. Cite sources inline (“Source: …”) whenever you quote data.',
   ].filter(Boolean).join('\n')
 
@@ -2126,6 +2441,7 @@ If trade is not material, set "trade_priority":"LOW" and omit "trade_table".`
   let finalProse = polishProseAU((composedOpinion || '').trim())
   finalProse = stripClichesIfAssured(finalProse, ctx, isAssuredValue)
   finalProse = harmoniseMechanicLanguage(finalProse, entryMechanicBrief)
+  finalProse = stripStaleNarrativeBlocks(finalProse)
 
   /* -------------------------- OPTIONAL UNIQUENESS PASS ---------------------- */
 
@@ -2234,6 +2550,14 @@ If trade is not material, set "trade_priority":"LOW" and omit "trade_table".`
   }
   const winsense = buildFeltWinnabilityProfile(ctx, { benchmark: rules.benchmarks ?? null })
   const multiAgentInput = buildMultiAgentInput(ctx, MARK_LAW_PROMPT_EVALUATE)
+  const framingHypothesisFlags = priorFramingMeta ? (priorFramingMeta as any).hypotheses_flags || null : null
+  if (framingHypothesisFlags) {
+    multiAgentInput.meta.hypothesisFlags = framingHypothesisFlags
+  }
+  const framingPrizeTruths = priorFramingMeta ? (priorFramingMeta as any).prize_truths || null : null
+  if (framingPrizeTruths?.length) {
+    multiAgentInput.meta.prizeTruths = framingPrizeTruths
+  }
   if (MULTI_AGENT_EVAL_ENABLED) {
     try {
       multiAgentResult = await runMultiAgentEvaluation(multiAgentInput)
@@ -2241,11 +2565,28 @@ If trade is not material, set "trade_priority":"LOW" and omit "trade_table".`
       console.error('[multi-agent] evaluation room failed', err)
     }
     if (multiAgentResult) {
+      multiAgentResult = sanitizeValueLedHeroEvaluation(multiAgentResult, multiAgentInput.meta) ?? multiAgentResult
       try {
+        const improvementMeta: MultiAgentMeta = { ...multiAgentInput.meta }
+        if (multiAgentInput.meta.hypothesisFlags) {
+          improvementMeta.hypothesisFlags = { ...multiAgentInput.meta.hypothesisFlags }
+        }
+        const guaranteeFlag = detectGuaranteeFlag(multiAgentResult, scoreboard, multiAgentInput.offerState)
+        if (guaranteeFlag) {
+          improvementMeta.hypothesisFlags = {
+            ...(improvementMeta.hypothesisFlags || {}),
+            needsGuaranteedReward: true,
+          }
+        }
         multiAgentImprovement = await runMultiAgentImprovement({
           ...multiAgentInput,
+          meta: improvementMeta,
           evaluation: multiAgentResult,
         })
+        multiAgentImprovement = enforceSimpleLadderImprovement(
+          multiAgentImprovement,
+          Boolean(multiAgentInput.meta.simpleLadderPreferred)
+        )
       } catch (err) {
         console.error('[multi-agent] improvement room failed', err)
       }

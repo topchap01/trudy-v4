@@ -8,28 +8,28 @@ datasource db {
 }
 
 model Campaign {
-  id              String           @id @default(cuid())
-  clientId        String?
-  clientName      String?
-  title           String
-  status          String
-  mode            String
-  market          String?
-  category        String?
-  score           Float?
-  startDate       DateTime?
-  endDate         DateTime?
-  prompt          String           @default("")
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  brief           Brief?
-  exportArtifacts ExportArtifact[]
-  heuristicScores HeuristicScore[]
-  ideaRoutes      IdeaRoute[]
-  outputs         Output[]
-  phaseRuns       PhaseRun[]
+  id               String           @id @default(cuid())
+  clientId         String?
+  clientName       String?
+  title            String
+  status           String
+  mode             String
+  market           String?
+  category         String?
+  score            Float?
+  startDate        DateTime?
+  endDate          DateTime?
+  prompt           String           @default("")
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  brief            Brief?
   campaignMemories CampaignMemory[]
-  llmInsights     LlmInsightLog[]
+  exportArtifacts  ExportArtifact[]
+  heuristicScores  HeuristicScore[]
+  ideaRoutes       IdeaRoute[]
+  llmInsights      LlmInsightLog[]
+  outputs          Output[]
+  phaseRuns        PhaseRun[]
 }
 
 model Brief {
@@ -76,7 +76,7 @@ model AgentMessage {
 }
 
 /// *
-///  * Persist every Ask result (hooks, ideas, retailerDeck, etc.)
+/// * Persist every Ask result (hooks, ideas, retailerDeck, etc.)
 model Output {
   id         String    @id @default(cuid())
   campaignId String
@@ -96,7 +96,7 @@ model Output {
 }
 
 /// *
-///  * Export artifacts (HTML/PDF/etc.)
+/// * Export artifacts (HTML/PDF/etc.)
 model ExportArtifact {
   id         String    @id @default(cuid())
   campaignId String
@@ -115,7 +115,7 @@ model ExportArtifact {
 }
 
 /// *
-///  * Idea routes generated/accepted for a campaign
+/// * Idea routes generated/accepted for a campaign
 model IdeaRoute {
   id              String           @id @default(cuid())
   campaignId      String
@@ -132,7 +132,7 @@ model IdeaRoute {
 }
 
 /// *
-///  * NEW: Heuristics scorecards per route (or ad-hoc per campaign)
+/// * NEW: Heuristics scorecards per route (or ad-hoc per campaign)
 model HeuristicScore {
   id           String     @id @default(cuid())
   campaignId   String
@@ -152,46 +152,31 @@ model HeuristicScore {
   @@index([createdAt])
 }
 
-/// *
-///  * Enums used by PhaseRun
-enum Phase {
-  FRAMING
-  CREATE
-  EVALUATE
-  SYNTHESIS
-}
-
-enum RunStatus {
-  RUNNING
-  COMPLETE
-  FAILED
-}
-
 model MarketCategoryBenchmark {
-  id                 String   @id @default(cuid())
-  marketCode         String
-  categoryCode       String
-  promoType          String
-  breadthTypical     Int?
-  breadthStrong      Int?
-  cashbackTypicalPct Float?
-  cashbackHighPct    Float?
-  cashbackMaxPct     Float?
-  heroCountTypical   Int?
-  heroCountStrong    Int?
-  cadenceHint        String?
-  frictionHint       String?
+  id                   String   @id @default(cuid())
+  marketCode           String
+  categoryCode         String
+  promoType            String
+  breadthTypical       Int?
+  breadthStrong        Int?
+  cashbackTypicalPct   Float?
+  cashbackHighPct      Float?
+  cashbackMaxPct       Float?
+  heroCountTypical     Int?
+  heroCountStrong      Int?
+  cadenceHint          String?
+  frictionHint         String?
   winnersPerDayTypical Float?
   winnersPerDayStrong  Float?
   frequencyFrame       String?
   topPrizeSweetSpot    Int?
   prizeTierGuidance    Json?
   progressCueScore     Float?
-  source             String?
-  confidence         Float?   @default(0.7)
-  metadata           Json?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  source               String?
+  confidence           Float?   @default(0.7)
+  metadata             Json?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   @@index([marketCode, categoryCode, promoType])
 }
@@ -210,8 +195,7 @@ model CampaignMemory {
   synthesisMeta   Json?
   outcomes        Json?
   createdAt       DateTime @default(now())
-
-  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaign        Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
   @@index([campaignId])
   @@index([marketCode, categoryCode, promoType])
@@ -219,19 +203,36 @@ model CampaignMemory {
 }
 
 model BrandKnowledge {
-  id           String   @id @default(cuid())
-  brand        String
-  market       String   @default("GLOBAL")
-  slug         String   @unique
-  dossier      Json
-  sourceModel  String?
-  prompt       String?
-  rawResponse  Json?
-  status       String   @default("READY")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id          String   @id @default(cuid())
+  brand       String
+  market      String   @default("GLOBAL")
+  slug        String   @unique
+  dossier     Json
+  sourceModel String?
+  prompt      String?
+  rawResponse Json?
+  status      String   @default("READY")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([brand])
+  @@index([market])
+}
+
+model PrizeKnowledge {
+  id          String   @id @default(cuid())
+  prize       String
+  market      String   @default("GLOBAL")
+  slug        String   @unique
+  dossier     Json
+  sourceModel String?
+  prompt      String?
+  rawResponse Json?
+  status      String   @default("READY")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([prize])
   @@index([market])
 }
 
@@ -267,20 +268,34 @@ model FounderNote {
 }
 
 model LlmInsightLog {
-  id          String   @id @default(cuid())
-  campaignId  String?
-  marketCode  String
+  id           String    @id @default(cuid())
+  campaignId   String?
+  marketCode   String
   categoryCode String
-  promoType   String
-  intent      String
-  payload     Json
-  prompt      String
-  model       String
-  confidence  Float?   @default(0.5)
-  createdAt   DateTime @default(now())
-
-  campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  promoType    String
+  intent       String
+  payload      Json
+  prompt       String
+  model        String
+  confidence   Float?    @default(0.5)
+  createdAt    DateTime  @default(now())
+  campaign     Campaign? @relation(fields: [campaignId], references: [id])
 
   @@index([campaignId])
   @@index([marketCode, categoryCode, promoType, intent])
+}
+
+/// *
+/// * Enums used by PhaseRun
+enum Phase {
+  FRAMING
+  CREATE
+  EVALUATE
+  SYNTHESIS
+}
+
+enum RunStatus {
+  RUNNING
+  COMPLETE
+  FAILED
 }

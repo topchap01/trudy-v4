@@ -33,7 +33,6 @@ export default function ExportPanel({ artifacts = [], onExport }) {
   const [persona, setPersona] = useState('FULL')
   const [includeTooltips, setIncludeTooltips] = useState(true)
   const [mode, setMode] = useState('BRIEFED')
-  const [legacyDeck, setLegacyDeck] = useState(false)
 
   function apiFileHref(a) {
     const rel = (a.path || '').split('storage/')[1]
@@ -63,9 +62,7 @@ export default function ExportPanel({ artifacts = [], onExport }) {
           titleOverride: titleOverride || undefined,
         },
       }
-      if (!legacyDeck) {
-        payload.mode = mode
-      }
+      payload.mode = mode
       await onExport(payload)
     } finally {
       setBusy(false)
@@ -121,51 +118,38 @@ export default function ExportPanel({ artifacts = [], onExport }) {
         <input type="checkbox" checked={includeTooltips} onChange={(e) => setIncludeTooltips(e.target.checked)} /> Show strategic tooltips in HTML preview
       </label>
 
-      <div className="border rounded p-3">
+      <div className="border rounded p-3 space-y-1 text-sm">
         <div className="font-medium text-sm mb-2">Export lens</div>
-        <label className="flex items-center gap-2 text-sm mb-2">
+        <label className="flex items-center gap-2">
           <input
-            type="checkbox"
-            checked={legacyDeck}
-            onChange={(e) => setLegacyDeck(e.target.checked)}
+            type="radio"
+            name="export-mode"
+            value="BRIEFED"
+            checked={mode === 'BRIEFED'}
+            onChange={(e) => setMode(e.target.value)}
           />
-          Use legacy deck layout
+          Review as briefed
         </label>
-        <div className={`space-y-1 text-sm ${legacyDeck ? 'opacity-60' : ''}`}>
-          <label className="flex items-center gap-2">
-            <input
-              type="radio"
-              name="export-mode"
-              value="BRIEFED"
-              checked={mode === 'BRIEFED'}
-              onChange={(e) => setMode(e.target.value)}
-              disabled={legacyDeck}
-            />
-            Review as briefed
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="radio"
-              name="export-mode"
-              value="IMPROVE"
-              checked={mode === 'IMPROVE'}
-              onChange={(e) => setMode(e.target.value)}
-              disabled={legacyDeck}
-            />
-            Sharpen with improvements
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="radio"
-              name="export-mode"
-              value="REBOOT"
-              checked={mode === 'REBOOT'}
-              onChange={(e) => setMode(e.target.value)}
-              disabled={legacyDeck}
-            />
-            Reboot with alternatives
-          </label>
-        </div>
+        <label className="flex items-center gap-2">
+          <input
+            type="radio"
+            name="export-mode"
+            value="IMPROVE"
+            checked={mode === 'IMPROVE'}
+            onChange={(e) => setMode(e.target.value)}
+          />
+          Sharpen with improvements
+        </label>
+        <label className="flex items-center gap-2">
+          <input
+            type="radio"
+            name="export-mode"
+            value="REBOOT"
+            checked={mode === 'REBOOT'}
+            onChange={(e) => setMode(e.target.value)}
+          />
+          Reboot with alternatives
+        </label>
       </div>
 
       <div className="grid md:grid-cols-2 gap-3">

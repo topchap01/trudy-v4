@@ -82,6 +82,17 @@ const REWARD_POSTURES = [
   { value: 'CHANCE', label: 'Chance to win — classic prize structure' },
 ]
 
+const MECHANIC_TYPE_OPTIONS = [
+  { value: 'PURCHASE', label: 'Purchase required' },
+  { value: 'UPLOAD_RECEIPT', label: 'Upload receipt' },
+  { value: 'SCAN_QR', label: 'Scan QR code' },
+  { value: 'LOYALTY_ID', label: 'Enter loyalty/member ID' },
+  { value: 'CASHBACK', label: 'Cashback claim' },
+  { value: 'PRIZE_DRAW', label: 'Chance-based draw' },
+  { value: 'INSTANT_WIN', label: 'Instant win' },
+  { value: 'APP_ENTRY', label: 'App / digital form' },
+]
+
 const AGE_BAND_OPTIONS = ['', '18-24', '25-34', '35-44', '45-54', '55-64', '65+']
 
 const LIFE_STAGE_OPTIONS = [
@@ -116,7 +127,7 @@ const IP_TYPES = [
 // --- Helpers ---
 function csv(s) {
   return String(s || '')
-    .split(',')
+    .split(/[,\\n]+/)
     .map(x => x.trim())
     .filter(Boolean)
 }
@@ -254,9 +265,10 @@ export default function NewCampaign() {
   const [rewardPosture, setRewardPosture] = useState('CHANCE')
   const [tradeIncentive, setTradeIncentive] = useState('')
 
-  // Creative
+// Creative
   const [hook, setHook] = useState('')
   const [mechanicOneLiner, setMechanicOneLiner] = useState('')
+  const [mechanicTypes, setMechanicTypes] = useState([])
 
   // Prizes
 const [heroPrize, setHeroPrize] = useState('')
@@ -394,6 +406,7 @@ const hydrateFromData = useCallback((spec = {}, campaignRow = {}, rawText = '') 
 
   setHook(spec.hook || '')
   setMechanicOneLiner(spec.mechanicOneLiner || '')
+  setMechanicTypes(Array.isArray(spec.mechanicTypes) ? spec.mechanicTypes.filter(Boolean) : [])
 
   const heroEnabled = Boolean(spec.heroPrizeEnabled || spec.heroPrize || spec.heroPrizeCount)
   setHasHeroPrizes(heroEnabled)
@@ -533,6 +546,7 @@ const hydrateFromData = useCallback((spec = {}, campaignRow = {}, rawText = '') 
   setTradeIncentive,
   setHook,
   setMechanicOneLiner,
+  setMechanicTypes,
   setHasHeroPrizes,
   setHeroPrize,
   setHeroPrizeCount,
@@ -669,9 +683,13 @@ if (isEditing && loading) {
 const heading = isEditing ? 'Edit Campaign' : 'New Campaign'
 const submitLabel = isEditing ? 'Save changes' : 'Create'
 
-function toggleMedia(name) {
-  setMedia(m => (m.includes(name) ? m.filter(x => x !== name) : [...m, name]))
-}
+  function toggleMedia(name) {
+    setMedia(m => (m.includes(name) ? m.filter(x => x !== name) : [...m, name]))
+  }
+
+  function toggleMechanicType(value) {
+    setMechanicTypes(prev => (prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]))
+  }
 
   function toggleActivationChannelValue(value) {
     setActivationChannels(prev => (prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]))
@@ -761,6 +779,9 @@ function toggleMedia(name) {
     const activationList = Array.from(new Set(activationChannels)).filter(Boolean)
     const retailerTagList = Array.from(new Set(retailerTags)).filter(Boolean)
 
+    const mechanicTypesList = mechanicTypes.filter(Boolean)
+    const runnerUpsList = csv(runnerUps).filter((entry) => entry && entry !== '0')
+
     const spec = {
       schema: 'trudy.v4.brief',
       briefVersion: 3,
@@ -788,7 +809,7 @@ function toggleMedia(name) {
       heroPrizeEnabled,
       heroPrize: heroPrizeEnabled ? (heroPrize || null) : null,
       heroPrizeCount: heroPrizeEnabled ? heroCount : null,
-      runnerUps: csv(runnerUps),
+      runnerUps: runnerUpsList,
 
       typeOfPromotion: builderMode ? '' : typeOfPromotion,
 
@@ -851,7 +872,7 @@ function toggleMedia(name) {
       screens: numOrNull(screens),
       appOnly: !!appOnly,
 
-      mechanicTypes: [],
+      mechanicTypes: mechanicTypesList,
       visuals: [],
       observed: {},
     }
@@ -1255,6 +1276,24 @@ function toggleMedia(name) {
         <div className="grid md:grid-cols-2 gap-3">
           <L label="Hook"><input className="w-full border rounded p-2" value={hook} onChange={e=>setHook(e.target.value)} placeholder="2–6 premium words" /></L>
           <L label="Mechanic (one line)"><input className="w-full border rounded p-2" value={mechanicOneLiner} onChange={e=>setMechanicOneLiner(e.target.value)} placeholder="Short, staff-zero line (avoid clichés)" /></L>
+        </div>
+        <div className="mt-4">
+          <div className="text-sm font-medium text-gray-800 mb-2">Mechanic types</div>
+          <div className="grid md:grid-cols-2 gap-2">
+            {MECHANIC_TYPE_OPTIONS.map((opt) => (
+              <label key={opt.value} className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={mechanicTypes.includes(opt.value)}
+                  onChange={() => toggleMechanicType(opt.value)}
+                />
+                <span>{opt.label}</span>
+              </label>
+            ))}
+          </div>
+          <div className="text-xs text-gray-500 mt-1">
+            Tag the mechanic so downstream agents know if it’s purchase + upload, QR scan, instant win, etc.
+          </div>
         </div>
       </Panel>
 

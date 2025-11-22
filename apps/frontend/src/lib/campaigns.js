@@ -54,6 +54,13 @@ export async function putBrief(id, payload) {
   return await api(`/api/campaigns/${id}/brief`, { method: 'PUT', body: payload });
 }
 
+export async function saveBriefQAResponse(id, issueId, response) {
+  return await api(`/api/campaigns/${id}/brief/qa/issues/${issueId}/response`, {
+    method: 'POST',
+    body: { response },
+  });
+}
+
 // ------- Framing -------
 export async function runFraming(id) {
   const data = await api(`/api/campaigns/${id}/framing/run`, { method: 'POST' });

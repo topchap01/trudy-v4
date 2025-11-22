@@ -584,6 +584,7 @@ const hooks = clean([
     ui: {
       verdict: mode === 'retrospective' ? 'REFLECTION' : 'PROPOSAL',
       hook: hooksLines[0],
+      assuredValue: isAssured,
       mechanic: isAssured
         ? 'Buy → scan QR → guaranteed reward'
         : isHybrid

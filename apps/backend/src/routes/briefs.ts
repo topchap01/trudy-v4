@@ -1,6 +1,7 @@
 // apps/backend/src/routes/briefs.ts
 import { Router } from 'express'
 import { prisma } from '../db/prisma.js'
+import { readLatestBriefReview, readBriefQAResponses, writeBriefQAResponse } from '../lib/brief-qa.js'
 
 const router = Router()
 
@@ -78,6 +79,31 @@ router.delete('/campaigns/:id/brief/assets/:assetId', async (req, res, next) => 
       data: { assets: { ...current, files: nextFiles } as any },
     })
     res.json({ ok: true })
+  } catch (e) {
+    next(e)
+  }
+})
+
+router.get('/campaigns/:id/brief/qa', async (req, res, next) => {
+  try {
+    const review = readLatestBriefReview(req.params.id)
+    const responses = readBriefQAResponses(req.params.id)
+    res.json({ review, responses })
+  } catch (e) {
+    next(e)
+  }
+})
+
+router.post('/campaigns/:id/brief/qa/issues/:issueId/response', async (req, res, next) => {
+  try {
+    const issueId = String(req.params.issueId || '').trim()
+    if (!issueId) {
+      res.status(400).json({ error: 'issueId required' })
+      return
+    }
+    const response = typeof req.body?.response === 'string' ? req.body.response : ''
+    const saved = writeBriefQAResponse(req.params.id, issueId, response)
+    res.json({ resolution: saved })
   } catch (e) {
     next(e)
   }

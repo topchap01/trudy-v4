@@ -1,4 +1,4 @@
-export const BUILDER_LANES = ['Hook', 'Value', 'Mechanic', 'Cadence', 'Trade', 'Compliance']
+export const BUILDER_LANES = ['Hook', 'Value', 'Mechanic', 'Cadence', 'Strategy', 'Retailer', 'Trade', 'Compliance']
 
 const randomId = () =>
   typeof crypto !== 'undefined' && crypto.randomUUID
@@ -16,6 +16,20 @@ const asArray = (value) => {
       .filter(Boolean)
   }
   return [String(value).trim()].filter(Boolean)
+}
+
+const cashbackHasRealFields = (cb) => {
+  if (!cb) return false
+  const hasAmount =
+    cb.amount != null && String(cb.amount).trim() !== ''
+  const hasPercent =
+    cb.percent != null && String(cb.percent).trim() !== ''
+  const odds = typeof cb.odds === 'string' ? cb.odds.trim() : ''
+  const processing = cb.processingDays != null && String(cb.processingDays).trim() !== ''
+  const cap = cb.cap != null && String(cb.cap).trim() !== ''
+  const basePayout = cb.basePayout != null && String(cb.basePayout).trim() !== ''
+  const topPayout = cb.topPayout != null && String(cb.topPayout).trim() !== ''
+  return hasAmount || hasPercent || Boolean(odds) || processing || cap || basePayout || topPayout
 }
 
 export function createEmptyWorkspace() {
@@ -51,14 +65,25 @@ export function workspaceFromSpec(spec = {}) {
     })
   }
 
-  if (spec.cashback || spec.assuredValue) {
+  if (cashbackHasRealFields(spec.cashback)) {
     const cb = spec.cashback || {}
     add('Value', 'value-cashback', {
-      assured: cb.assured !== false,
+      assured: cb.assured === true,
       amount: cb.amount != null ? String(cb.amount) : '',
       percent: cb.percent != null ? String(cb.percent) : '',
       odds: cb.odds || '',
       processing: cb.processingDays != null ? String(cb.processingDays) : '',
+      cap:
+        cb.cap == null
+          ? ''
+          : typeof cb.cap === 'number'
+            ? String(cb.cap)
+            : String(cb.cap),
+      expected_claims: spec.expectedBuyers != null ? String(spec.expectedBuyers) : '',
+      assured_summary:
+        Array.isArray(spec.assuredItems) && spec.assuredItems.length
+          ? spec.assuredItems.join('\n')
+          : '',
     })
   }
 
@@ -117,12 +142,60 @@ export function workspaceFromSpec(spec = {}) {
       proof_type: spec.proofType || '',
       staff_burden: spec.staffBurden || '',
     })
+  } else {
+    add('Mechanic', 'mechanic-passport', {
+      description: '',
+      trigger_qty: '',
+      proof_type: '',
+      staff_burden: '',
+    })
   }
 
   if (spec.cadenceCopy) {
     add('Cadence', 'cadence-instant', {
       cadence_copy: spec.cadenceCopy,
       winner_vis: '',
+    })
+  } else {
+    add('Cadence', 'cadence-instant', {
+      cadence_copy: '',
+      winner_vis: '',
+    })
+  }
+
+  const objective = cleanText(spec.primaryObjective || spec.objective || '')
+  const kpi = cleanText(spec.primaryKpi || '')
+  const measurement = cleanText(spec.measurementNotes || spec.measurementPlan || '')
+  if (objective || kpi || measurement) {
+    add('Strategy', 'strategy-objective', {
+      objective,
+      kpi,
+      measurement,
+    })
+  } else {
+    add('Strategy', 'strategy-objective', {
+      objective: '',
+      kpi: '',
+      measurement: '',
+    })
+  }
+
+  const retailerList = Array.isArray(spec.retailers) ? spec.retailers.map((r) => cleanText(r)).filter(Boolean) : []
+  const activationList = Array.isArray(spec.activationChannels)
+    ? spec.activationChannels.map((r) => cleanText(r)).filter(Boolean)
+    : []
+  const channelNotes = cleanText(spec.channelNotes || '')
+  if (retailerList.length || activationList.length || channelNotes) {
+    add('Retailer', 'retail-footprint', {
+      retailers: retailerList.join('\n'),
+      activation_channels: activationList.join('\n'),
+      channel_notes: channelNotes,
+    })
+  } else {
+    add('Retailer', 'retail-footprint', {
+      retailers: '',
+      activation_channels: '',
+      channel_notes: '',
     })
   }
 
@@ -132,11 +205,21 @@ export function workspaceFromSpec(spec = {}) {
       reward: spec.tradeIncentiveSpec?.reward || spec.tradeIncentive || '',
       guardrail: spec.tradeIncentiveSpec?.guardrail || '',
     })
+  } else {
+    add('Trade', 'trade-incentive', {
+      retailers: '',
+      reward: '',
+      guardrail: '',
+    })
   }
 
   if (spec.nonNegotiables && spec.nonNegotiables.length) {
     add('Compliance', 'compliance', {
       requirements: spec.nonNegotiables.join('\n'),
+    })
+  } else {
+    add('Compliance', 'compliance', {
+      requirements: '',
     })
   }
 
@@ -160,13 +243,16 @@ const formatRunnerUpLine = (meta) => {
 
 const hasMeaningfulValue = (obj) =>
   Object.values(obj || {}).some((val) => {
-    if (typeof val === 'boolean') return true
+    if (typeof val === 'boolean') return val === true
     return val != null && val !== ''
   })
 
 export function workspaceToOverrides(workspace = createEmptyWorkspace()) {
   const result = specFromWorkspace({}, workspace)
   if (result.heroPrizeEnabled === false) delete result.heroPrizeEnabled
+  if (result.cashback && !cashbackHasRealFields(result.cashback)) {
+    delete result.cashback
+  }
   if (result.tradeIncentiveSpec && !hasMeaningfulValue(result.tradeIncentiveSpec)) {
     delete result.tradeIncentiveSpec
   }
@@ -200,11 +286,35 @@ export function specFromWorkspace(currentSpec = {}, workspace = createEmptyWorks
     const percent = toNumberOrNull(valueEntry.values.percent)
     if (percent != null) cb.percent = percent
     else delete cb.percent
-    cb.assured = valueEntry.values.assured !== false
+    cb.assured = valueEntry.values.assured === true
     cb.odds = cleanText(valueEntry.values.odds)
     const proc = toNumberOrNull(valueEntry.values.processing)
     if (proc != null) cb.processingDays = proc
     else delete cb.processingDays
+    const capRaw = cleanText(valueEntry.values.cap)
+    if (capRaw) {
+      if (capRaw.toUpperCase() === 'UNLIMITED') cb.cap = 'UNLIMITED'
+      else {
+        const capNum = toNumberOrNull(capRaw)
+        cb.cap = capNum != null ? capNum : capRaw
+      }
+    } else {
+      delete cb.cap
+    }
+    const expectedClaims = toNumberOrNull(valueEntry.values.expected_claims)
+    if (expectedClaims != null) next.expectedBuyers = expectedClaims
+    else delete next.expectedBuyers
+    const assuredLines = asArray(valueEntry.values.assured_summary)
+    if (assuredLines.length) {
+      next.assuredItems = assuredLines
+    } else if (cb.assured !== false && amount != null) {
+      const currency = cleanText(cb.currency || next.cashback?.currency || '')
+      const prefix = currency ? `${currency} ` : '$'
+      next.assuredItems = [`${prefix}${amount} cashback per eligible purchase`]
+    } else {
+      delete next.assuredItems
+    }
+    next.assuredValue = cb.assured !== false
     next.cashback = cb
   } else {
     delete next.cashback
@@ -308,6 +418,32 @@ export function specFromWorkspace(currentSpec = {}, workspace = createEmptyWorks
     next.nonNegotiables = lines
   } else {
     delete next.nonNegotiables
+  }
+
+  const retailerEntry = column('Retailer').entries.find((entry) => entry.cardId === 'retail-footprint')
+  if (retailerEntry) {
+    const retailers = asArray(retailerEntry.values.retailers)
+    if (retailers.length) next.retailers = retailers
+    else delete next.retailers
+    const channels = asArray(retailerEntry.values.activation_channels)
+    if (channels.length) next.activationChannels = channels
+    else delete next.activationChannels
+    const notes = cleanText(retailerEntry.values.channel_notes)
+    next.channelNotes = notes || null
+  } else {
+    delete next.channelNotes
+  }
+
+  const strategyEntry = column('Strategy').entries.find((entry) => entry.cardId === 'strategy-objective')
+  if (strategyEntry) {
+    const objective = cleanText(strategyEntry.values.objective)
+    const kpi = cleanText(strategyEntry.values.kpi)
+    const measurement = cleanText(strategyEntry.values.measurement)
+    next.primaryObjective = objective || null
+    next.primaryKpi = kpi || null
+    next.measurementNotes = measurement || null
+  } else {
+    delete next.measurementNotes
   }
 
   if (next.cashback && !hasMeaningfulValue(next.cashback)) {

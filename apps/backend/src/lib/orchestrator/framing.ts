@@ -7,6 +7,7 @@ import type { OfferIQ } from '../offeriq.js'
 import { runResearch, type ResearchPack } from '../research.js'
 import { resolveModel } from '../models.js'
 import { proofreadProse } from '../proofreader.js'
+import { ensurePrizeKnowledge, type PrizeKnowledgeDossier } from '../prize-knowledge.js'
 
 type PrizePresence = 'NONE' | 'BREADTH_ONLY' | 'MAJOR_PRESENT'
 
@@ -73,6 +74,8 @@ export type FramingV2Meta = {
     count: number | null
     labelHint?: string | null
   }
+  prize_truths?: string[]
+  hypotheses_flags?: Record<string, any>
   handoff?: {
     research_provided: boolean
     do_not_research: boolean
@@ -264,6 +267,7 @@ function normaliseMeta(m: any): FramingV2Meta {
       dont: Array.isArray(m?.tone_of_voice?.dont) ? m.tone_of_voice.dont : [],
     },
     non_negotiables: Array.isArray(m?.non_negotiables) ? m.non_negotiables : [],
+    prize_truths: Array.isArray(m?.prize_truths) ? m.prize_truths : [],
     offer_iq: m?.offer_iq,
     research: m?.research,
     benchmarks: m?.benchmarks,
@@ -296,6 +300,7 @@ function normaliseMeta(m: any): FramingV2Meta {
     dont: cap<string>(meta.tone_of_voice.dont || [], 5),
   }
   meta.non_negotiables = cap<string>(meta.non_negotiables, 6)
+  meta.prize_truths = cap<string>(meta.prize_truths || [], 6)
 
   return meta
 }
@@ -603,8 +608,11 @@ export async function runFraming(ctx: CampaignContext) {
   const prizeSignals = takeUnique([
     ...listify(brief.heroPrize),
     ...listify(brief.rewardUnit),
-    ...listify(brief.prizeBudgetNotes)
-  ], 6)
+    ...listify(brief.prizeBudgetNotes),
+    ...listify(brief.gwp?.item),
+    ...listify(brief.assuredItems),
+    ...listify(brief.runnerUps),
+  ], 8)
   const retailerSignals = takeUnique(listify(brief.retailers), 10)
   const competitorSignals = takeUnique(listify(brief.competitors), 10)
 
@@ -620,6 +628,27 @@ export async function runFraming(ctx: CampaignContext) {
   const heroPrize = (ctx.briefSpec as any)?.heroPrize || null
   const heroPrizeCount = Number((ctx.briefSpec as any)?.heroPrizeCount ?? 0) || null
   const majorPrizeOverlay = (ctx.briefSpec as any)?.majorPrizeOverlay ?? null
+  const gwpItem = (ctx.briefSpec as any)?.gwp?.item || null
+  const runnerUpsRaw = listify((ctx.briefSpec as any)?.runnerUps)
+  let prizeKnowledge: PrizeKnowledgeDossier | null = null
+  const prizeLabelCandidates = [
+    typeof majorPrizeOverlay === 'string' ? majorPrizeOverlay.trim() : '',
+    typeof heroPrize === 'string' ? heroPrize.trim() : '',
+    typeof gwpItem === 'string' ? gwpItem.trim() : '',
+  ].filter(Boolean)
+  if (!prizeLabelCandidates.length && runnerUpsRaw.length) {
+    prizeLabelCandidates.push(String(runnerUpsRaw[0]))
+  }
+  for (const candidate of prizeLabelCandidates) {
+    if (!candidate) continue
+    try {
+      prizeKnowledge = await ensurePrizeKnowledge(candidate, ctx.market)
+      if (prizeKnowledge) break
+    } catch (err) {
+      console.warn('[framing] prize knowledge fetch failed', err)
+      prizeKnowledge = null
+    }
+  }
   const cashback = (ctx.briefSpec as any)?.cashback || null
   const cashbackBands = Array.isArray(cashback?.bands) ? cashback.bands : []
   const cashbackHeadline = cashback?.headline || null
@@ -961,6 +990,10 @@ export async function runFraming(ctx: CampaignContext) {
       ...inject,
       ...meta.improvement_hypotheses
     ], 5)
+    meta.hypotheses_flags = {
+      ...(meta.hypotheses_flags || {}),
+      prefersDoublePasses: true,
+    }
   }
 
   // Top up + gate market facts by category
@@ -970,6 +1003,31 @@ export async function runFraming(ctx: CampaignContext) {
   // Inject benchmark summaries into market_facts (respecting ≤5)
   const roomLeft = Math.max(0, 5 - meta.market_facts.length)
   const benchFacts: Array<{ claim: string; sourceHint: string }> = []
+  if (prizeKnowledge) {
+    const truthLines = [
+      ...(prizeKnowledge.prizeTruths || []),
+      ...(prizeKnowledge.iconStatus || []),
+    ]
+    if (truthLines.length) {
+      meta.prize_truths = cap<string>([...(meta.prize_truths || []), ...truthLines], 6)
+    }
+    const emotionLines = prizeKnowledge.emotionalHooks || []
+    if (emotionLines.length) {
+      meta.improvement_hypotheses = cap<string>([
+        ...meta.improvement_hypotheses,
+        ...emotionLines,
+      ], 5)
+    }
+    if (prizeKnowledge.prizeTruths?.length) {
+      const available = Math.max(0, 5 - meta.market_facts.length)
+      const additions = prizeKnowledge.prizeTruths.slice(0, available).map((claim: string) => ({
+        claim,
+        sourceHint: 'Source: prize knowledge (GPT)',
+      }))
+      meta.market_facts.push(...additions)
+    }
+  }
+
   if (roomLeft > 0 && cbBench.sample > 0) {
     let line = ''
     if (cbBench.typicalAbs) {

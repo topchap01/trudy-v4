@@ -13,7 +13,7 @@ export type BuilderField = {
 
 export type BuilderCard = {
   id: string
-  category: 'Hook' | 'Value' | 'Mechanic' | 'Cadence' | 'Retailer' | 'Compliance' | 'Trade'
+  category: 'Hook' | 'Value' | 'Mechanic' | 'Cadence' | 'Strategy' | 'Retailer' | 'Compliance' | 'Trade'
   label: string
   description: string
   fields: BuilderField[]
@@ -84,6 +84,28 @@ const builderCards: BuilderCard[] = [
         input: 'number',
         placeholder: 'e.g., 7',
         min: 0,
+      },
+      {
+        key: 'cap',
+        label: 'Cap / fund limit',
+        input: 'text',
+        placeholder: 'e.g., First 2,000 valid claims or $200k fund; UNLIMITED if brand underwrites all',
+        helper: 'Spell out whether the cashback has a hard cap or is fully open.',
+      },
+      {
+        key: 'expected_claims',
+        label: 'Expected claims / buyers',
+        input: 'number',
+        placeholder: 'e.g., 2500',
+        helper: 'Helps Finance sanity-check the open liability.',
+        min: 0,
+      },
+      {
+        key: 'assured_summary',
+        label: 'Assured value description',
+        input: 'textarea',
+        placeholder: 'e.g., AUD 100 cashback per eligible purchase (credited within 28 days).',
+        helper: 'Lists the guaranteed items so QA can separate them from prize overlays.',
       },
     ],
     tags: ['value', 'cashback'],
@@ -259,6 +281,33 @@ const builderCards: BuilderCard[] = [
     tags: ['cadence', 'crm'],
   },
   {
+    id: 'strategy-objective',
+    category: 'Strategy',
+    label: 'Objective & KPI',
+    description: 'Capture the measurable objective and how success will be judged.',
+    fields: [
+      {
+        key: 'objective',
+        label: 'Primary objective',
+        input: 'text',
+        placeholder: 'e.g., +15% cooking appliance units vs LY in participating retailers',
+      },
+      {
+        key: 'kpi',
+        label: 'Primary KPI',
+        input: 'text',
+        placeholder: 'e.g., Incremental unit sales vs LY baseline',
+      },
+      {
+        key: 'measurement',
+        label: 'Measurement notes',
+        input: 'textarea',
+        placeholder: 'e.g., Track POS units vs control stores; focus on Harvey Norman/Good Guys dashboards.',
+      },
+    ],
+    tags: ['objective', 'kpi'],
+  },
+  {
     id: 'trade-incentive',
     category: 'Trade',
     label: 'Retailer incentive',
@@ -284,6 +333,33 @@ const builderCards: BuilderCard[] = [
       },
     ],
     tags: ['trade', 'retailer'],
+  },
+  {
+    id: 'retail-footprint',
+    category: 'Retailer',
+    label: 'Retail & channel footprint',
+    description: 'List the banners and channels this promotion must cover.',
+    fields: [
+      {
+        key: 'retailers',
+        label: 'Retailers / banners',
+        input: 'textarea',
+        placeholder: 'Harvey Norman, The Good Guys, JB Hi-Fi, Bing Lee',
+      },
+      {
+        key: 'activation_channels',
+        label: 'Activation channels',
+        input: 'textarea',
+        placeholder: 'In-store, Social, Digital, Retail Media',
+      },
+      {
+        key: 'channel_notes',
+        label: 'Channel notes',
+        input: 'textarea',
+        placeholder: 'e.g., Zero staff burden; retail media mostly banners + CRM.',
+      },
+    ],
+    tags: ['retail', 'channels'],
   },
   {
     id: 'compliance',
