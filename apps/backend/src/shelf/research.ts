@@ -4,6 +4,7 @@
 import { chat } from '../lib/openai.js'
 import { prisma } from '../db/prisma.js'
 import { resolveModel } from '../lib/models.js'
+import { getMarketContext } from '../lib/market-context.js'
 
 /* --------------------------------- Types --------------------------------- */
 
@@ -229,40 +230,89 @@ export async function runShelfResearch(params: {
   const market = params.market ?? 'Australia'
   const { brand, category, retailers, mechanic, competitors, campaignId } = params
 
-  // 1. Check cache
+  // 1. Build the web-research dossier (Serper + Claude). Cache hits short-circuit this.
+  let dossier: ResearchDossier
   const cached = await getCached(brand, category, market)
   if (cached) {
     console.info('[shelf-research] returning cached dossier for', brand, category, market)
-    return cached
+    dossier = cached
+  } else {
+    const queries = buildQueries({ brand, category, market, retailers, mechanic, competitors })
+    console.info('[shelf-research] running', queries.length, 'searches for', brand, category)
+
+    const allResults: Array<{ query: string; results: SearchResult[] }> = []
+    const searchPromises = queries.map(async (q) => {
+      const results = await searchSerper(q)
+      return { query: q, results }
+    })
+    const settled = await Promise.allSettled(searchPromises)
+    for (const s of settled) {
+      if (s.status === 'fulfilled') allResults.push(s.value)
+    }
+
+    const totalHits = allResults.reduce((n, r) => n + r.results.length, 0)
+    if (totalHits === 0) {
+      console.warn('[shelf-research] no search results found — proceeding with empty web dossier')
+      dossier = { ...EMPTY_DOSSIER }
+    } else {
+      console.info('[shelf-research]', totalHits, 'total search results — sending to Claude for analysis')
+      dossier = await analyseResults({ brand, category, market, mechanic, retailers }, allResults)
+      await setCache(brand, category, market, dossier, campaignId)
+    }
   }
 
-  // 2. Build and run searches
-  const queries = buildQueries({ brand, category, market, retailers, mechanic, competitors })
-  console.info('[shelf-research] running', queries.length, 'searches for', brand, category)
+  // 2. Always layer in observed promos from the Cowork Promo Monitor baseline.
+  //    Done after the cache lookup so local data stays fresh even on cache hits.
+  return augmentWithMarketContext(dossier, { category, mechanic })
+}
 
-  const allResults: Array<{ query: string; results: SearchResult[] }> = []
-  const searchPromises = queries.map(async (q) => {
-    const results = await searchSerper(q)
-    return { query: q, results }
-  })
-  const settled = await Promise.allSettled(searchPromises)
-  for (const s of settled) {
-    if (s.status === 'fulfilled') allResults.push(s.value)
+function augmentWithMarketContext(
+  dossier: ResearchDossier,
+  params: { category: string; mechanic?: string }
+): ResearchDossier {
+  const local = getMarketContext({ category: params.category, mechanic: params.mechanic })
+  if (local.filtered.count === 0) return dossier
+
+  const stats = local.filtered.valueStats
+  const observedDate = local.baselineLastUpdated?.slice(0, 10) ?? 'recent'
+  const factParts = [
+    `${local.filtered.count} matching promo${local.filtered.count === 1 ? '' : 's'} currently active in AU (observed via Promo Monitor baseline as of ${observedDate})`,
+  ]
+  if (stats.count > 0 && stats.min != null && stats.max != null && stats.mean != null) {
+    factParts.push(
+      `prize values $${stats.min.toLocaleString()}–$${stats.max.toLocaleString()} (mean $${stats.mean.toLocaleString()})`
+    )
+  }
+  const topPromoters = local.filtered.topPromoters.slice(0, 3).map((p) => p.promoter).join(', ')
+  if (topPromoters) factParts.push(`most active promoters: ${topPromoters}`)
+
+  const summaryFact = {
+    fact: factParts.join('. '),
+    source: 'Promo Monitor fortnightly baseline',
   }
 
-  const totalHits = allResults.reduce((n, r) => n + r.results.length, 0)
-  if (totalHits === 0) {
-    console.warn('[shelf-research] no search results found — returning empty dossier')
-    return { ...EMPTY_DOSSIER }
+  const observed = local.filtered.promos.slice(0, 20).map((p) => ({
+    brand: p.promoter || 'Unknown',
+    mechanic: p.technique || '',
+    headline: [
+      p.title,
+      p.value ? `Value: ${p.value}` : null,
+      p.dates ? `Dates: ${p.dates}` : null,
+    ]
+      .filter(Boolean)
+      .join(' | '),
+    source: 'Promo Monitor baseline (observed)',
+    what_works: '',
+    what_to_avoid: '',
+  }))
+
+  console.info(
+    `[shelf-research] augmented dossier with ${observed.length} observed promos from Promo Monitor baseline`
+  )
+
+  return {
+    ...dossier,
+    categoryFacts: [summaryFact, ...dossier.categoryFacts],
+    competitorPromos: [...observed, ...dossier.competitorPromos],
   }
-
-  console.info('[shelf-research]', totalHits, 'total search results — sending to Claude for analysis')
-
-  // 3. Analyse with Claude
-  const dossier = await analyseResults({ brand, category, market, mechanic, retailers }, allResults)
-
-  // 4. Cache result
-  await setCache(brand, category, market, dossier, campaignId)
-
-  return dossier
 }
