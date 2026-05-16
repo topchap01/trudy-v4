@@ -20,6 +20,7 @@ import promoBuilderRouter from './routes/promo-builder.js'
 import sparkRouter from './routes/spark.js'
 import synthesisStreamRouter from './routes/synthesis-stream.js'
 import shelfRouter from './routes/shelf.js'
+import marketContextRouter from './routes/market-context.js'
 
 import opinionRoutes from './routes/opinion.js'
 import judgeRouter from './routes/judge.js'
@@ -64,6 +65,7 @@ api.use(campaignDebugRouter)
 api.use(promoBuilderRouter)
 api.use(sparkRouter)
 api.use(shelfRouter)
+api.use(marketContextRouter)
 
 // Move these INSIDE the same api router so order is deterministic
 api.use(opinionRoutes)
