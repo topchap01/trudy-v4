@@ -61,6 +61,11 @@ Trudy does not exist in isolation. A suite of Cowork scheduled tasks generates r
 │       └──→ Marketing Engine ──→ blog drafts (human-reviewed)    │
 │                                                                 │
 │  SF Health Check ──→ campaign entry data (Salesforce)            │
+│                                                                 │
+│  SF Outcome Export ──→ data/sf-campaign-outcomes.json            │
+│       (weekly)          (ALL campaigns: mechanic, timing,       │
+│                          entries, client, status — the RAG      │
+│                          ground truth for Trudy evaluations)    │
 └─────────────────────────────────────────────────────────────────┘
         │
         ▼
@@ -69,6 +74,9 @@ Trudy does not exist in isolation. A suite of Cowork scheduled tasks generates r
 │                                                                 │
 │  Reads market data → grounds evaluations in real competitor     │
 │  activity, real mechanic prevalence, real prize values          │
+│                                                                 │
+│  Reads outcome data → grounds scoring in real entry counts,     │
+│  real mechanics used, real timing from Trevor's own campaigns   │
 │                                                                 │
 │  Generates routes → Marketing Engine publishes related content  │
 │  Evaluates briefs → outcomes feed back from Salesforce          │
@@ -84,6 +92,53 @@ These files are produced by Cowork tasks and available for Trudy to read:
 | Promo baseline | `~/Documents/Claude/Scheduled/promo-monitor-fortnightly/baseline_promos.json` | Fortnightly | All live AU promotions: title, category, promoter, technique, method, value, dates |
 | Electrolux landscape | `~/Documents/Claude/Scheduled/electrolux-promo-landscape/electrolux-landscape-YYYY-MM.json` | Monthly | Whitegoods promos by brand, type, category, value, source |
 | SEO baseline | `~/Documents/Claude/Scheduled/weekly-seo-deep-dive/seo-baseline-YYYY-MM-DD.json` | Weekly | Keyword visibility, content gaps, pillar distribution |
+| **SF campaign outcomes** | **`data/sf-campaign-outcomes.json` (in this repo)** | **Weekly** | **Every Trevor campaign ever run: mechanic, timing, entry count, client, retailer, status. This is Trudy's ground truth for RAG-based evaluation.** |
+
+### SF Outcome Data — The RAG Ground Truth
+
+`data/sf-campaign-outcomes.json` is the most important integration file. It contains every `Promotional_Campaign__c` record from Salesforce — historical and active. During evaluation, Trudy should:
+
+1. **Filter by mechanic:** When evaluating a cashback brief, pull all historical cashback campaigns and show entry count distribution
+2. **Filter by client:** Show the client's own campaign history — "You've run 8 promotions through Trevor, averaging X entries"
+3. **Filter by category/retailer:** If targeting Coles with a laundry promotion, find comparable campaigns
+4. **Benchmark:** "The proposed prize value of $50 cashback compares to an average of $X across your 12 historical cashback campaigns"
+
+Schema version: **v3** (enriched May 2026). Typed as `CampaignOutcome[]`. The `mechanic` field maps to `Campaign_Type__c` in Salesforce and should be matched against `taxonomy.json` mechanics.
+
+#### Key fields for evaluation
+
+**Structured (query directly):** `mechanic`, `entryCount`, `estimatedEntries`, `clientName`, `salesFrom/To`, `receiptRequired`, `campaignCodeRequired`, `ocrCheck`, `entryLimit`, `maxDailyEntries`
+
+**Prize data (v3 — from `Promotional_Campaign_Prize__c`):**
+```typescript
+prizes: Array<{
+  name: string;          // Prize description
+  level: string;         // e.g. "Major", "Minor", "Instant"
+  value: number;         // Dollar value per unit
+  maxWinners: number;    // Total available
+  claimed: number;       // Already awarded
+  type: string;          // e.g. "Cash", "Gift Card", "Product"
+}>
+```
+
+**Cashback data (v3 — from `Cashback_Range__c`):**
+```typescript
+cashbackRanges: Array<{
+  name: string;          // Range description
+  cashbackValue: number; // Dollar amount
+  minSpend: number;      // Minimum qualifying spend
+  maxSpend: number;      // Maximum qualifying spend
+}>
+```
+
+**Computed fields (v3):**
+- `totalPrizePoolValue` — sum of (value × maxWinners) across all prizes
+- `majorPrizeValue` — highest single prize value
+- `clientName` — resolved human-readable name (from Account object)
+
+**Text blobs (parse with Claude at eval time):** `winners` (legacy prize text), `fulfillment` (delivery methods, prize costs), `giftWithPurchase` (GWP descriptions), `entryConsideration` and `purchaseRequirement` (friction analysis)
+
+**Known gaps:** No consumer-facing headline/hook field exists in Salesforce — it lives on the microsite only. `campaignStart` is null on all records — use `salesFrom`/`salesTo` for timing. Only 8/58 campaigns have `estimatedEntries`. `Promotional_Campaign_Win_Definition__c` exists but returned empty (field names may differ from API names).
 
 ### Shared Taxonomy
 

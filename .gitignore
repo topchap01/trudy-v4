@@ -9,3 +9,7 @@ apps/backend/prisma/dev.db
 apps/backend/prisma/dev.db.bak
 apps/backend/storage/
 apps/backend/dist/
+
+# Cowork/Salesforce baseline data (client names, entry counts, prize claim rates)
+data/
+

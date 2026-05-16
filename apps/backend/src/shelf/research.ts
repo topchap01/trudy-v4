@@ -5,6 +5,7 @@ import { chat } from '../lib/openai.js'
 import { prisma } from '../db/prisma.js'
 import { resolveModel } from '../lib/models.js'
 import { getMarketContext } from '../lib/market-context.js'
+import { getCampaignOutcomes } from '../lib/campaign-outcomes.js'
 
 /* --------------------------------- Types --------------------------------- */
 
@@ -261,9 +262,13 @@ export async function runShelfResearch(params: {
     }
   }
 
-  // 2. Always layer in observed promos from the Cowork Promo Monitor baseline.
-  //    Done after the cache lookup so local data stays fresh even on cache hits.
-  return augmentWithMarketContext(dossier, { category, mechanic })
+  // 2. Always layer in fresh local data (after cache lookup so it doesn't get stale-cached).
+  //    Two independent augmentations:
+  //      a. Promo Monitor baseline — live AU competitor promos
+  //      b. Trevor Salesforce outcomes — past campaign performance with claim rates
+  let augmented = augmentWithMarketContext(dossier, { category, mechanic })
+  augmented = augmentWithCampaignOutcomes(augmented, { mechanic })
+  return augmented
 }
 
 function augmentWithMarketContext(
@@ -314,5 +319,74 @@ function augmentWithMarketContext(
     ...dossier,
     categoryFacts: [summaryFact, ...dossier.categoryFacts],
     competitorPromos: [...observed, ...dossier.competitorPromos],
+  }
+}
+
+function augmentWithCampaignOutcomes(
+  dossier: ResearchDossier,
+  params: { mechanic?: string }
+): ResearchDossier {
+  if (!params.mechanic) return dossier
+  const sf = getCampaignOutcomes({ mechanic: params.mechanic })
+  if (sf.matched.count === 0) return dossier
+
+  const factParts = [
+    `Trevor has run ${sf.matched.count} ${params.mechanic} campaign${sf.matched.count === 1 ? '' : 's'} (${sf.matched.totalEntries.toLocaleString()} total entries${sf.matched.avgEntries != null ? `, avg ${sf.matched.avgEntries.toLocaleString()}` : ''})`,
+  ]
+  if (sf.matched.aggregateClaimRate != null) {
+    factParts.push(
+      `overall prize claim rate ${Math.round(sf.matched.aggregateClaimRate * 100)}%`
+    )
+  }
+  const topCampaign = sf.matched.top[0]
+  if (topCampaign) {
+    const claimNote =
+      topCampaign.overallClaimRate != null
+        ? `, ${Math.round(topCampaign.overallClaimRate * 100)}% claim rate`
+        : ''
+    factParts.push(
+      `highest-entry: ${topCampaign.name} (${topCampaign.entryCount.toLocaleString()} entries${claimNote})`
+    )
+  }
+
+  const summaryFact = {
+    fact: factParts.join('. '),
+    source: `Trevor / Salesforce campaign outcomes (exported ${sf.exportDate ?? 'recent'})`,
+  }
+
+  const precedents = sf.matched.top.map((c) => {
+    const outcomeParts: string[] = [`${c.entryCount.toLocaleString()} entries`]
+    if (c.totalPrizePoolValue) {
+      outcomeParts.push(`prize pool $${c.totalPrizePoolValue.toLocaleString()}`)
+    }
+    if (c.overallClaimRate != null) {
+      outcomeParts.push(`${Math.round(c.overallClaimRate * 100)}% prizes claimed`)
+    }
+    if (c.prizeLadder.length) {
+      const ladderDesc = c.prizeLadder
+        .map(
+          (p) =>
+            `L${p.level} ${p.name} $${p.value.toLocaleString()} (${p.claimed}/${p.maxWinners})`
+        )
+        .join(', ')
+      outcomeParts.push(`top ladder rungs: ${ladderDesc}`)
+    }
+    return {
+      brand: c.clientName ?? 'Unknown client',
+      mechanic: c.mechanic,
+      category: '',
+      outcome: outcomeParts.join(' | '),
+      source: `Trevor SF campaign "${c.name}"${c.campaignWindow ? ` (${c.campaignWindow})` : ''}`,
+    }
+  })
+
+  console.info(
+    `[shelf-research] augmented dossier with ${precedents.length} Trevor campaign precedents (mechanic="${params.mechanic}")`
+  )
+
+  return {
+    ...dossier,
+    categoryFacts: [summaryFact, ...dossier.categoryFacts],
+    mechanicPrecedents: [...precedents, ...dossier.mechanicPrecedents],
   }
 }
