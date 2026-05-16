@@ -2,6 +2,8 @@
 
 Promotional strategy AI for Bamboo Marketing / Trevor Services. Multi-agent system that generates and evaluates promotional campaign routes using The Shelf Truth framework.
 
+> **Coming to this fresh?** Read [`SESSION-LOG.md`](./SESSION-LOG.md) first for the most recent handoff between Claude Code, Cowork, and Mark — current state, what was shipped most recently, and what's still in flight.
+
 ## Tech Stack
 
 - **Frontend:** React 19 + Vite + Tailwind + React Query (`apps/frontend/`)
