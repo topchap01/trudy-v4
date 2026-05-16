@@ -47,10 +47,10 @@
   body { @apply bg-background text-foreground; }
 }
 
-.input { @apply w-full border rounded p-2; }
+.input { @apply w-full border rounded p-2 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-100 dark:placeholder-gray-400; }
 .btn { @apply inline-flex items-center rounded-md px-3 py-2 text-white; }
-.btn--primary { @apply bg-sky-600 hover:bg-sky-700; }
-.btn--busy { @apply bg-sky-300 cursor-not-allowed; }
+.btn--primary { @apply bg-sky-600 hover:bg-sky-700 dark:bg-sky-500 dark:hover:bg-sky-600; }
+.btn--busy { @apply bg-sky-300 cursor-not-allowed dark:bg-sky-700 dark:text-sky-300; }
 
 .builder-confetti-layer {
   position: absolute;
@@ -101,7 +101,7 @@
   z-index: 1;
 }
 .spark-chip {
-  @apply inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide bg-white/80 text-slate-700 border border-white/60 shadow-sm;
+  @apply inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide bg-white/80 text-slate-700 border border-white/60 shadow-sm dark:bg-gray-800/80 dark:text-slate-300 dark:border-gray-700/60;
 }
 .spark-chip__dot {
   width: 6px;
@@ -111,7 +111,7 @@
   box-shadow: 0 0 8px rgba(16, 185, 129, 0.8);
 }
 .spark-chip--pill {
-  @apply inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide bg-white/85 text-slate-700 border border-white/70 shadow;
+  @apply inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide bg-white/85 text-slate-700 border border-white/70 shadow dark:bg-gray-800/85 dark:text-slate-300 dark:border-gray-700/70;
 }
 .spark-chip-dot--glow {
   animation: sparkPulse 2.4s ease-in-out infinite alternate;
@@ -128,22 +128,22 @@
   @apply grid gap-3 mt-4;
 }
 .spark-card {
-  @apply rounded-xl bg-white/80 backdrop-blur px-4 py-3 border border-white/60 shadow-sm;
+  @apply rounded-xl bg-white/80 backdrop-blur px-4 py-3 border border-white/60 shadow-sm dark:bg-gray-800/80 dark:border-gray-700/60;
 }
 .spark-card h4 {
-  @apply text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1;
+  @apply text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1 dark:text-slate-400;
 }
 .spark-card p {
-  @apply text-sm text-slate-800;
+  @apply text-sm text-slate-800 dark:text-slate-200;
 }
 .spark-card ul {
-  @apply list-disc pl-4 text-sm text-slate-800 space-y-1;
+  @apply list-disc pl-4 text-sm text-slate-800 space-y-1 dark:text-slate-200;
 }
 .spark-badge-row {
   @apply flex flex-wrap gap-2 mt-3;
 }
 .spark-badge {
-  @apply inline-flex items-center gap-1 rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700 border border-white/60 shadow-sm;
+  @apply inline-flex items-center gap-1 rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700 border border-white/60 shadow-sm dark:bg-gray-800/80 dark:text-slate-300 dark:border-gray-700/60;
 }
 .spark-badge--hooks {
   @apply bg-emerald-50 text-emerald-800 border-emerald-100;

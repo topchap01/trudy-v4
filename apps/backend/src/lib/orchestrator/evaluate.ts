@@ -541,9 +541,8 @@ function enforceSimpleLadderImprovement(
           const options = Array.isArray(casted.options)
             ? casted.options.map((opt) => ({ ...opt, runner_up_prize_count: 0 }))
             : []
-          casted.must_fix = scrubArray(casted.must_fix)
-          casted.nice_to_have = scrubArray(casted.nice_to_have)
-          casted.notes_for_bruce = scrubLine(casted.notes_for_bruce)
+          casted.must_fix = scrubArray(casted.must_fix) ?? casted.must_fix
+          casted.nice_to_have = scrubArray(casted.nice_to_have) ?? casted.nice_to_have
           return { ...casted, options }
         }
         return agent
@@ -557,8 +556,8 @@ function enforceSimpleLadderImprovement(
         hero_overlay: opt.hero_overlay
           ? `${opt.hero_overlay} (premium bonus tier; cashback carries fairness)`
           : heroOverlayNote,
-        summary: scrubLine(opt.summary),
-        why_this: scrubArray(opt.why_this),
+        summary: scrubLine(opt.summary) ?? opt.summary,
+        why_this: scrubArray(opt.why_this) ?? opt.why_this,
       }))
     : improvement.bruce?.upgrade_options
   const cadence_summary = Array.isArray(improvement.cadence_summary)
@@ -566,7 +565,7 @@ function enforceSimpleLadderImprovement(
         ...entry,
         majors_text: entry.majors_text || 'Hero winners follow a limited cadence (weekly or finale draw)',
         runners_per_day: null,
-        runners_text: entry.runners_text ? `${entry.runners_text} (suppressed)` : null,
+        runners_text: entry.runners_text ? `${entry.runners_text} (suppressed)` : undefined,
       }))
     : improvement.cadence_summary
   const bruceNotes = improvement.bruce?.notes || ''
@@ -599,10 +598,10 @@ function sanitizeValueLedHeroEvaluation(
     ? result.agents.map((agent) => {
         if (!agent) return agent
         const clone: SpecialistAgentOutput = { ...agent }
-        if (Array.isArray(clone.key_points)) clone.key_points = scrubArray(clone.key_points)
-        if (Array.isArray(clone.must_fix)) clone.must_fix = scrubArray(clone.must_fix)
-        if (Array.isArray(clone.nice_to_have)) clone.nice_to_have = scrubArray(clone.nice_to_have)
-        if (clone.notes_for_bruce) clone.notes_for_bruce = scrubLine(clone.notes_for_bruce)
+        if (Array.isArray(clone.key_points)) clone.key_points = scrubArray(clone.key_points) ?? clone.key_points
+        if (Array.isArray(clone.must_fix)) clone.must_fix = scrubArray(clone.must_fix) ?? clone.must_fix
+        if (Array.isArray(clone.nice_to_have)) clone.nice_to_have = scrubArray(clone.nice_to_have) ?? clone.nice_to_have
+        if (clone.notes_for_bruce) clone.notes_for_bruce = scrubLine(clone.notes_for_bruce) ?? clone.notes_for_bruce
         return clone
       })
     : result.agents
@@ -610,10 +609,10 @@ function sanitizeValueLedHeroEvaluation(
   const bruce = result.bruce
     ? {
         ...result.bruce,
-        top_reasons: scrubArray(result.bruce.top_reasons || []),
-        must_fix_items: scrubArray(result.bruce.must_fix_items || []),
-        quick_wins: scrubArray(result.bruce.quick_wins || []),
-        notes: scrubLine(result.bruce.notes),
+        top_reasons: scrubArray(result.bruce.top_reasons || []) ?? [],
+        must_fix_items: scrubArray(result.bruce.must_fix_items || []) ?? [],
+        quick_wins: scrubArray(result.bruce.quick_wins || []) ?? [],
+        notes: scrubLine(result.bruce.notes) ?? result.bruce.notes,
       }
     : result.bruce
 
@@ -776,7 +775,7 @@ function buildMultiAgentInput(ctx: CampaignContext, constitutionText: string): M
   const preferSimpleLadder = Boolean(strongAssuredBase && hasHeroOverlay)
   const promoMode: MultiAgentMeta['promoMode'] = preferSimpleLadder ? 'VALUE_LED_HERO' : 'PRIZE_LADDER'
   const heroRole: MultiAgentMeta['heroRole'] = hasHeroOverlay ? (preferSimpleLadder ? 'THEATRE' : 'ENGAGEMENT') : null
-  const cadenceInfo = preferSimpleLadder
+  const cadenceInfo: CadenceInfo | null = preferSimpleLadder
     ? { label: 'PR_THEATRE', text: 'Hero winners follow their own limited cadence (e.g., weekly or finale draw); cashback is the felt reward.' }
     : cadenceInfoRaw
   const meta: MultiAgentMeta = {

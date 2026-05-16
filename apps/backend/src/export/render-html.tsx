@@ -312,14 +312,14 @@ export function renderClientDeck(snapshot: SnapshotRich, opts: RenderOptionsRunt
           ? `<div class="grid">
               ${roomSummary.cards
                 .map(
-                  (card) => `
+                  (card: any) => `
                     <div class="card">
                       <h3>${escapeHtml(card.agent)}</h3>
                       <div class="badge">${escapeHtml(card.verdict)}</div>
                       <p>${escapeHtml(card.headline)}</p>
                       ${
                         card.points.length
-                          ? `<ul>${card.points.map((pt) => `<li>${escapeHtml(pt)}</li>`).join('')}</ul>`
+                          ? `<ul>${card.points.map((pt: string) => `<li>${escapeHtml(pt)}</li>`).join('')}</ul>`
                           : ''
                       }
                     </div>
@@ -1103,15 +1103,15 @@ function buildMechanicSteps(meta: any, spec: Record<string, any> = {}): string[]
   fromArrows
     .map((segment: string) => cleanText(segment))
     .filter(Boolean)
-    .forEach((line) => steps.push(line))
+    .forEach((line: string) => steps.push(line))
 
   const oneLiner = spec?.mechanicOneLiner || spec?.entryMechanic || ''
   if (steps.length < 3 && oneLiner) {
     oneLiner
       .split(/(?:→|,|then|\+)/i)
-      .map((segment) => cleanText(segment))
+      .map((segment: string) => cleanText(segment))
       .filter(Boolean)
-      .forEach((line) => steps.push(line))
+      .forEach((line: string) => steps.push(line))
   }
 
   if (steps.length < 3 && spec?.proofType && spec.proofType !== 'NONE') {

@@ -1,10 +1,15 @@
 // apps/frontend/src/lib/campaigns.js
 // Unified frontend API helpers for Trudy v4
 
+function authHeaders() {
+  const devEmail = localStorage.getItem('devEmail') || import.meta.env?.VITE_DEV_EMAIL;
+  return devEmail ? { 'x-user-email': devEmail } : {};
+}
+
 async function api(path, { method = 'GET', body, headers } = {}) {
   const r = await fetch(path, {
     method,
-    headers: { 'Content-Type': 'application/json', ...(headers || {}) },
+    headers: { 'Content-Type': 'application/json', ...authHeaders(), ...(headers || {}) },
     body: body ? JSON.stringify(body) : undefined,
   });
   const text = await r.text();

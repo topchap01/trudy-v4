@@ -1,17 +1,17 @@
 // apps/backend/src/orchestrator/agents.ts
-import OpenAI from 'openai';
 import { z } from 'zod';
+import { chat } from '../lib/openai.js';
 
 /* ---------------------------------------
  * Shared helpers
  * ------------------------------------- */
 
 function getModel(): string {
-  return process.env.TRUDY_SYNTH_MODEL?.trim() || 'gpt-4o-mini';
+  return process.env.TRUDY_SYNTH_MODEL?.trim() || 'claude-sonnet-4-20250514';
 }
 
 function hasKey(): boolean {
-  return Boolean(process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.trim());
+  return Boolean(process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY.trim());
 }
 
 function parseJsonSafe(raw: string): any | null {
@@ -51,7 +51,7 @@ export type ClaraFraming = z.infer<typeof ClaraFramingSchema>;
 
 /**
  * Ask CLARA to produce a framing snapshot.
- * Returns null if OPENAI env or TRUDY_CLARA_SYSTEM is not set.
+ * Returns null if ANTHROPIC env or TRUDY_CLARA_SYSTEM is not set.
  */
 export async function askClaraForFraming(args: {
   campaign: { id: string; title?: string | null; market?: string | null };
@@ -60,8 +60,6 @@ export async function askClaraForFraming(args: {
   if (!hasKey()) return null;
   const system = (process.env.TRUDY_CLARA_SYSTEM || '').trim();
   if (!system) return null;
-
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
   const userPayload = {
     instruction:
@@ -78,18 +76,16 @@ export async function askClaraForFraming(args: {
     },
   };
 
-  const completion = await openai.chat.completions.create({
+  const raw = await chat({
     model: getModel(),
+    system: `${system}\nCRITICAL: Output MUST be compact JSON, no prose.`,
+    messages: [{ role: 'user', content: JSON.stringify(userPayload) }],
     temperature: 0.2,
-    messages: [
-      { role: 'system', content: `${system}\nCRITICAL: Output MUST be compact JSON, no prose.` },
-      { role: 'user', content: JSON.stringify(userPayload) },
-    ],
-    response_format: { type: 'json_object' as const },
+    json: true,
+    meta: { scope: 'clara.framing', campaignId: args.campaign.id },
   });
 
-  const raw = completion.choices?.[0]?.message?.content || '{}';
-  const parsed = parseJsonSafe(raw);
+  const parsed = parseJsonSafe(raw || '{}');
   if (!parsed) return null;
 
   // Validate and return strictly typed framing
@@ -133,7 +129,7 @@ export type OmarEval = z.infer<typeof OmarEvalSchema>;
 
 /**
  * Ask OMAR to evaluate the CURRENT routes and return structured JSON.
- * Returns null if OPENAI env or TRUDY_OMAR_SYSTEM is not set.
+ * Returns null if ANTHROPIC env or TRUDY_OMAR_SYSTEM is not set.
  */
 export async function askOmarForEvaluation(args: {
   campaign: { id: string; title?: string | null; market?: string | null };
@@ -143,8 +139,6 @@ export async function askOmarForEvaluation(args: {
   if (!hasKey()) return null;
   const system = (process.env.TRUDY_OMAR_SYSTEM || '').trim();
   if (!system) return null;
-
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
   const userPayload = {
     instruction:
@@ -168,18 +162,16 @@ export async function askOmarForEvaluation(args: {
     },
   };
 
-  const completion = await openai.chat.completions.create({
+  const raw = await chat({
     model: getModel(),
+    system: `${system}\nCRITICAL: Output MUST be compact JSON, no prose.`,
+    messages: [{ role: 'user', content: JSON.stringify(userPayload) }],
     temperature: 0.2,
-    messages: [
-      { role: 'system', content: `${system}\nCRITICAL: Output MUST be compact JSON, no prose.` },
-      { role: 'user', content: JSON.stringify(userPayload) },
-    ],
-    response_format: { type: 'json_object' as const },
+    json: true,
+    meta: { scope: 'omar.evaluation', campaignId: args.campaign.id },
   });
 
-  const raw = completion.choices?.[0]?.message?.content || '{}';
-  const parsed = parseJsonSafe(raw);
+  const parsed = parseJsonSafe(raw || '{}');
   if (!parsed) return null;
 
   // Normalise verdict if present

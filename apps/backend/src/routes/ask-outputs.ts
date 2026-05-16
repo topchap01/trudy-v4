@@ -1,13 +1,12 @@
 // apps/backend/src/routes/ask-outputs.ts
 import { Router, type Request, type Response, type NextFunction } from 'express'
-import OpenAI from 'openai'
 import { z } from 'zod'
+import { chat } from '../lib/openai.js'
 import { prisma } from '../db/prisma.js'
 import { buildCreationGuide, type RuleFlex } from '../lib/promotrack.js'
 
 const router = Router()
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-const MODEL = process.env.TRUDY_SYNTH_MODEL || 'gpt-4o-mini'
+const MODEL = process.env.TRUDY_SYNTH_MODEL || 'claude-sonnet-4-20250514'
 
 // ---------- schema ----------
 const Body = z.object({
@@ -395,20 +394,19 @@ router.post('/ask/outputs', async (req: Request, res: Response, next: NextFuncti
       creationGuide,
     })
 
-    const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = []
-    messages.push({ role: 'system', content: systemMeta(meta) })
+    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = []
     if (type === 'custom' && prompt) {
       messages.push({ role: 'user', content: `CUSTOM PROMPT:\n${prompt.trim()}` })
     }
     messages.push({ role: 'user', content: instruction })
 
-    const completion = await openai.chat.completions.create({
+    const text = await chat({
       model: MODEL,
-      temperature: temperatureBy(type, params?.intensity),
+      system: systemMeta(meta),
       messages,
+      temperature: temperatureBy(type, params?.intensity),
+      meta: { scope: 'askOutputs', campaignId: campaign.id, type },
     })
-
-    const text = (completion.choices?.[0]?.message?.content || '').trim()
     const saved = await prisma.output.create({
       data: {
         campaignId: campaign.id,

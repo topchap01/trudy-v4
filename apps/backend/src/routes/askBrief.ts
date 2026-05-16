@@ -1,12 +1,11 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
-import OpenAI from 'openai';
+import { chat } from '../lib/openai.js';
 import { prisma } from '../db/prisma.js';
 
 const router = Router();
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || undefined });
-const MODEL = process.env.TRUDY_SYNTH_MODEL || 'gpt-4o-mini';
+const MODEL = process.env.TRUDY_SYNTH_MODEL || 'claude-sonnet-4-20250514';
 const FAKE = process.env.TRUDY_FAKE_RUNS === 'true';
 const PERSIST = process.env.TRUDY_PERSIST_ASK === 'true';
 
@@ -93,10 +92,10 @@ router.post('/campaigns/:id/ask/brief', async (req: Request, res: Response) => {
     const rawText = brief.rawText || JSON.stringify(brief.parsedJson ?? {}, null, 2);
 
     let result: z.infer<typeof ClarifyResult> | null = null;
-    if (process.env.OPENAI_API_KEY) {
+    if (process.env.ANTHROPIC_API_KEY) {
       try {
         const system = [
-          'You are Trudy’s Brief Clarifier.',
+          "You are Trudy's Brief Clarifier.",
           'Read the supplied brief and produce:',
           '1) A single-sentence problemStatement.',
           '2) 3–12 clarifying questions (each with a theme).',
@@ -113,18 +112,16 @@ router.post('/campaigns/:id/ask/brief', async (req: Request, res: Response) => {
           rawText,
         ].join('\n');
 
-        const resp = await openai.chat.completions.create({
+        const raw = await chat({
           model: MODEL,
-          messages: [
-            { role: 'system', content: system },
-            { role: 'user', content: user },
-          ],
+          system,
+          messages: [{ role: 'user', content: user }],
           temperature: 0.3,
-          response_format: { type: 'json_object' as const },
+          json: true,
+          meta: { scope: 'askBrief', campaignId: id },
         });
 
-        const raw = resp.choices?.[0]?.message?.content || '{}';
-        const parsed = JSON.parse(raw);
+        const parsed = JSON.parse(raw || '{}');
         result = ClarifyResult.parse(parsed);
 
         if (PERSIST) {
@@ -134,7 +131,7 @@ router.post('/campaigns/:id/ask/brief', async (req: Request, res: Response) => {
               agent: 'CLARA',
               role: 'SUGGESTION',
               text: JSON.stringify(result),
-              tokenCount: resp.usage?.total_tokens ?? 0,
+              tokenCount: 0,
             } as any,
           }).catch(() => {});
         }

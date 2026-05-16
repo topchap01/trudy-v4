@@ -84,7 +84,7 @@ export default function MarkdownBlock({ text='', className='' }) {
   return (
     <div
       data-md="live"
-      className={`prose-trudy border rounded-lg p-4 leading-7 text-[15px] bg-white ${className}`}
+      className={`prose-trudy border rounded-lg p-4 leading-7 text-[15px] bg-white dark:bg-gray-900 dark:border-gray-700 dark:text-gray-100 ${className}`}
       style={{wordBreak:'break-word'}}
       dangerouslySetInnerHTML={{ __html: html }}
     />

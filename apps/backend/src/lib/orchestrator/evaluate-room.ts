@@ -10,7 +10,7 @@ export type SpecialistAgentOutput = {
   verdict: 'GO' | 'ITERATE' | 'KILL'
   headline: string
   scale_zone: 'ZONE_1_NORMAL' | 'ZONE_2_BRAVE' | 'ZONE_3_BREAKS_SYSTEM' | 'NOT_APPLICABLE'
-  cadence_label: 'UNKNOWN' | 'WINNER_EVERY_HOUR' | 'WINNER_EVERY_DAY' | 'SPARSE_LONG_SHOT' | 'STORE_LEVEL' | 'BUSY_FEEL'
+  cadence_label: 'UNKNOWN' | 'WINNER_EVERY_HOUR' | 'WINNER_EVERY_DAY' | 'SPARSE_LONG_SHOT' | 'STORE_LEVEL' | 'BUSY_FEEL' | 'PR_THEATRE'
   key_points: string[]
   must_fix: string[]
   nice_to_have: string[]
@@ -807,9 +807,18 @@ async function callSpecialistAgent(
     meta: metaPayload,
     offer_state: input.offerState,
   }
+  const userMessage = [
+    `<campaign_brief>${typeof input.brief === 'string' ? input.brief : JSON.stringify(input.brief)}</campaign_brief>`,
+    `<concept>${typeof input.concept === 'string' ? input.concept : JSON.stringify(input.concept)}</concept>`,
+    `<ambition_setting>${input.ambitionSetting}</ambition_setting>`,
+    `<meta>${JSON.stringify(metaPayload)}</meta>`,
+    input.offerState ? `<offer_state>${JSON.stringify(input.offerState)}</offer_state>` : '',
+    '',
+    'Evaluate this concept from your specialist perspective. Return your assessment as JSON.',
+  ].filter(Boolean).join('\n')
   const response = await chat({
     system,
-    messages: [{ role: 'user', content: JSON.stringify(payload) }],
+    messages: [{ role: 'user', content: userMessage }],
     model: SPECIALIST_MODEL,
     json: true,
     temperature: Number(process.env.EVAL_ROOM_SPECIALIST_TEMP ?? 0.35),
@@ -829,20 +838,27 @@ async function callBruce(
   agentOutputs: SpecialistAgentOutput[]
 ): Promise<BruceOutput> {
   const system = buildBrucePrompt(input.constitutionText)
-  const payload = {
-    brief: input.brief,
-    concept: input.concept,
-    ambition_setting: input.ambitionSetting,
-    constitution: input.constitutionText,
-    meta: input.meta,
-    agents: agentOutputs,
-  }
+  const agentSections = agentOutputs.map((a) =>
+    `<specialist agent="${a.agent}">\n${JSON.stringify(a, null, 2)}\n</specialist>`
+  ).join('\n\n')
+  const bruceMessage = [
+    `<campaign_brief>${typeof input.brief === 'string' ? input.brief : JSON.stringify(input.brief)}</campaign_brief>`,
+    `<concept>${typeof input.concept === 'string' ? input.concept : JSON.stringify(input.concept)}</concept>`,
+    `<ambition_setting>${input.ambitionSetting}</ambition_setting>`,
+    '',
+    '<specialist_assessments>',
+    agentSections,
+    '</specialist_assessments>',
+    '',
+    'Synthesise these specialist assessments into your final verdict. Think deeply about trade-offs, conflicts between specialists, and the commercial reality. Return your assessment as JSON.',
+  ].join('\n')
   const response = await chat({
     system,
-    messages: [{ role: 'user', content: JSON.stringify(payload) }],
+    messages: [{ role: 'user', content: bruceMessage }],
     model: BRUCE_MODEL,
     json: true,
-    temperature: Number(process.env.EVAL_ROOM_BRUCE_TEMP ?? 0.2),
+    thinking: true,
+    thinkingBudget: Number(process.env.EVAL_ROOM_BRUCE_THINKING_BUDGET ?? 10000),
     max_output_tokens: Number(process.env.EVAL_ROOM_BRUCE_MAX_TOKENS ?? 1800),
     meta: { scope: 'evaluation.room.bruce' },
   })
@@ -889,21 +905,24 @@ async function callImproveSpecialistAgent(
     hypothesis_flags: input.meta.hypothesisFlags || null,
     prize_facts: input.meta.prizeTruths || null,
   }
-  const payload = {
-    brief: input.brief,
-    concept: input.concept,
-    ambition_setting: input.ambitionSetting,
-    constitution: input.constitutionText,
-    meta: metaPayload,
-    offer_state: input.offerState,
-    evaluation: {
-      bruce: input.evaluation.bruce,
-      specialist: input.evaluation.agents.find((entry) => entry.agent === agent) || null,
-    },
-  }
+  const priorSpecialist = input.evaluation.agents.find((entry) => entry.agent === agent) || null
+  const improveMessage = [
+    `<campaign_brief>${typeof input.brief === 'string' ? input.brief : JSON.stringify(input.brief)}</campaign_brief>`,
+    `<concept>${typeof input.concept === 'string' ? input.concept : JSON.stringify(input.concept)}</concept>`,
+    `<ambition_setting>${input.ambitionSetting}</ambition_setting>`,
+    `<meta>${JSON.stringify(metaPayload)}</meta>`,
+    input.offerState ? `<offer_state>${JSON.stringify(input.offerState)}</offer_state>` : '',
+    '',
+    '<prior_evaluation>',
+    `<bruce_verdict>${JSON.stringify(input.evaluation.bruce)}</bruce_verdict>`,
+    priorSpecialist ? `<your_prior_assessment>${JSON.stringify(priorSpecialist)}</your_prior_assessment>` : '',
+    '</prior_evaluation>',
+    '',
+    'Based on the prior evaluation, propose improvements from your specialist perspective. Return your recommendations as JSON.',
+  ].filter(Boolean).join('\n')
   const response = await chat({
     system,
-    messages: [{ role: 'user', content: JSON.stringify(payload) }],
+    messages: [{ role: 'user', content: improveMessage }],
     model: SPECIALIST_MODEL,
     json: true,
     temperature: Number(process.env.EVAL_ROOM_IMPROVE_SPECIALIST_TEMP ?? 0.35),
@@ -923,21 +942,30 @@ async function callBruceImprove(
   agentOutputs: SpecialistImprovementOutput[]
 ): Promise<BruceImprovementOutput> {
   const system = buildBruceImprovePrompt(input.constitutionText)
-  const payload = {
-    brief: input.brief,
-    concept: input.concept,
-    ambition_setting: input.ambitionSetting,
-    evaluation: input.evaluation,
-    meta: input.meta,
-    offer_state: input.offerState,
-    improvements: agentOutputs,
-  }
+  const improveSections = agentOutputs.map((a) =>
+    `<specialist agent="${a.agent}">\n${JSON.stringify(a, null, 2)}\n</specialist>`
+  ).join('\n\n')
+  const bruceImproveMessage = [
+    `<concept>${typeof input.concept === 'string' ? input.concept : JSON.stringify(input.concept)}</concept>`,
+    `<ambition_setting>${input.ambitionSetting}</ambition_setting>`,
+    '',
+    '<prior_evaluation>',
+    `<bruce_verdict>${JSON.stringify(input.evaluation.bruce)}</bruce_verdict>`,
+    '</prior_evaluation>',
+    '',
+    '<specialist_improvements>',
+    improveSections,
+    '</specialist_improvements>',
+    '',
+    'Assemble the best specialist improvements into 1-2 coherent upgrade packages. Think carefully about which combinations work together commercially. Return your recommendations as JSON.',
+  ].join('\n')
   const response = await chat({
     system,
-    messages: [{ role: 'user', content: JSON.stringify(payload) }],
+    messages: [{ role: 'user', content: bruceImproveMessage }],
     model: BRUCE_MODEL,
     json: true,
-    temperature: Number(process.env.EVAL_ROOM_IMPROVE_BRUCE_TEMP ?? 0.2),
+    thinking: true,
+    thinkingBudget: Number(process.env.EVAL_ROOM_BRUCE_THINKING_BUDGET ?? 10000),
     max_output_tokens: Number(process.env.EVAL_ROOM_IMPROVE_BRUCE_MAX_TOKENS ?? 1800),
     meta: { scope: 'improve.room.bruce' },
   })

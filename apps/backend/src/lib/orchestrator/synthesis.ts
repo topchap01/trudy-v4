@@ -274,26 +274,49 @@ export async function runSynthesis(ctx: CampaignContext, inputs: SynthesisInputs
     ideationHarness ? 'Bruce has already retailised a concept—treat it as the default direction unless you deliberately beat it.' : '',
   ].filter(Boolean).join('\n')
 
-  const prompt = `You are the Synthesis lead. You own the final narrative that goes to the client.\n\n` +
-    'CONTEXT:\n' + limitedContext.map((line) => `- ${line}`).join('\n') + '\n' +
-    (opsGuards.length ? `Operational guardrails:\n${opsGuards.slice(0, 6).map((line) => `- ${line}`).join('\n')}\n` : '') +
-    `Brief snapshot: ${briefSnapshot.replace(/\s+/g, ' ').slice(0, 360)}\n\n` +
-    (framingNote ? `Framing memory: ${framingNote}\n` : '') +
-    (strategistNote ? `Strategist scenarios: ${strategistNote}\n` : '') +
-    (evaluationNote ? `Evaluation verdict: ${evaluationNote}\n` : '') +
-    (opinionNote ? `Opinion stance: ${opinionNote}\n` : '') +
-    (ideasNote ? `Ideas flavour: ${ideasNote}\n` : '') +
-    (researchHighlights.length ? `Research highlights: ${researchHighlights.join(' | ')}\n\n` : '\n') +
-    `${toneBlock}\n` +
-    'Write a ~550 word synthesis memo. No bullet points, no markdown headings, no emoji. Keep paragraphs ≤4 sentences.\n' +
-    'Structure: (1) Verdict & why now. (2) Improvement plan (value, cadence, prize, hook). (3) Retailer/trade reality + ops. (4) Tighten vs Stretch. (5) Measurement paragraph starting “Measurement — …”.\n' +
-    'Use the actual numbers supplied (winners, cadence, OfferIQ scores, benchmarks). If you cite Strategist moves, articulate why they win.\n' +
-    'Do not recommend staff-run amplification, kiosks, or terminals; assume store labour tolerance is zero unless the brief says otherwise.\n' +
-    'After the measurement paragraph, add two standalone lines: Pack line in quotes, then Staff line in quotes (each ≤6 words, brand-locked).\n' +
-    'Tone: elegant, authoritative, commercially ruthless. Cite sources inline when mentioning data (e.g., “Source: insidefmcg.com.au”).'
+  const prompt = [
+    `You are the Synthesis lead. You own the final narrative that goes to the client.`,
+    '',
+    '<context>',
+    ...limitedContext.map((line) => `- ${line}`),
+    '</context>',
+    '',
+    opsGuards.length ? '<guardrails>\n' + opsGuards.slice(0, 6).map((line) => `- ${line}`).join('\n') + '\n</guardrails>\n' : '',
+    `<brief_snapshot>${briefSnapshot.replace(/\s+/g, ' ').slice(0, 360)}</brief_snapshot>`,
+    '',
+    '<team_inputs>',
+    framingNote ? `<framing>${framingNote}</framing>` : '',
+    strategistNote ? `<strategist>${strategistNote}</strategist>` : '',
+    evaluationNote ? `<evaluation>${evaluationNote}</evaluation>` : '',
+    opinionNote ? `<opinion>${opinionNote}</opinion>` : '',
+    ideasNote ? `<ideas>${ideasNote}</ideas>` : '',
+    researchHighlights.length ? `<research>${researchHighlights.join(' | ')}</research>` : '',
+    '</team_inputs>',
+    '',
+    `<tone>${toneBlock}</tone>`,
+    '',
+    '<instructions>',
+    'Write a ~550 word synthesis memo. No bullet points, no markdown headings, no emoji. Keep paragraphs ≤4 sentences.',
+    '',
+    'Structure your memo in five flowing movements:',
+    '1. Verdict and why now — the decision and its commercial logic.',
+    '2. Improvement plan — value, cadence, prize, hook.',
+    '3. Retailer/trade reality and operations.',
+    '4. Tighten versus Stretch — what to protect, what to push.',
+    '5. Measurement paragraph starting “Measurement — …”.',
+    '',
+    'Use the actual numbers supplied (winners, cadence, OfferIQ scores, benchmarks). If you cite Strategist moves, articulate why they win.',
+    'Do not recommend staff-run amplification, kiosks, or terminals; assume store labour tolerance is zero unless the brief says otherwise.',
+    'After the measurement paragraph, add two standalone lines: Pack line in quotes, then Staff line in quotes (each ≤6 words, brand-locked).',
+    'Tone: elegant, authoritative, commercially ruthless. Cite sources inline when mentioning data (e.g., “Source: insidefmcg.com.au”).',
+    '</instructions>',
+  ].filter(Boolean).join('\n')
 
   const systemMessage = [
-    'You write world-class synthesis memos: one voice, elegant, decisive, grounded in strategy and numbers.',
+    'You write world-class synthesis memos for promotional campaigns.',
+    'Your voice: one clear voice, elegant, decisive, grounded in strategy and numbers.',
+    'You synthesise inputs from Framing, Evaluation, Strategist, and Opinion teams into a single authoritative narrative.',
+    'You never waffle. Every sentence earns its place.',
     style.persona ? `Embodied persona: ${style.persona}.` : '',
   ].filter(Boolean).join(' ')
 

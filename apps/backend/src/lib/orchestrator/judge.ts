@@ -470,8 +470,8 @@ if (opts?.useLLM) {
       system: sys,
       messages: [{ role: 'user', content: user }],
       json: true,
-      temperature: 0,
-      top_p: 1,
+      thinking: true,
+      thinkingBudget: 8000,
       max_output_tokens: 600,
       meta: { scope: 'judge.audit', campaignId: ctx.id },
     })

@@ -1,5 +1,5 @@
 // apps/backend/src/index.ts
-import 'dotenv/config'
+import './env.js'
 import express, { type Request, type Response, type NextFunction } from 'express'
 import cors from 'cors'
 import morgan from 'morgan'
@@ -18,6 +18,8 @@ import heuristicsRouter from './routes/heuristics.js'
 import campaignDebugRouter from './routes/campaign-debug.js'
 import promoBuilderRouter from './routes/promo-builder.js'
 import sparkRouter from './routes/spark.js'
+import synthesisStreamRouter from './routes/synthesis-stream.js'
+import shelfRouter from './routes/shelf.js'
 
 import opinionRoutes from './routes/opinion.js'
 import judgeRouter from './routes/judge.js'
@@ -55,15 +57,20 @@ api.use(createRouter)
 api.use(exportsRouter)
 api.use(askOutputsRouter)
 api.use(synthesisRouter)
+api.use(synthesisStreamRouter)
 api.use(strategistRouter)
 api.use(heuristicsRouter)
 api.use(campaignDebugRouter)
 api.use(promoBuilderRouter)
 api.use(sparkRouter)
+api.use(shelfRouter)
 
 // Move these INSIDE the same api router so order is deterministic
 api.use(opinionRoutes)
 api.use(judgeRouter)
+
+// Serve static files publicly (bypass auth)
+app.use('/api/files', express.static(storageRoot))
 
 // Protect all of /api in one place
 app.use('/api', authMiddleware, api)

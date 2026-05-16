@@ -1,5 +1,7 @@
 // /apps/backend/src/lib/ai.ts
-import { createOpenAI } from '@ai-sdk/openai';
+// Vercel AI SDK provider — now using Anthropic Claude.
+
+import { createAnthropic } from '@ai-sdk/anthropic';
 import { streamText, type LanguageModel } from 'ai';
 
 /**
@@ -8,13 +10,13 @@ import { streamText, type LanguageModel } from 'ai';
 function assertEnv(key: string) {
   if (!process.env[key]) throw new Error(`Missing required environment variable: ${key}`);
 }
-assertEnv('OPENAI_API_KEY');
+assertEnv('ANTHROPIC_API_KEY');
 
 /**
- * OpenAI provider for Vercel AI SDK
+ * Anthropic provider for Vercel AI SDK
  */
-export const openai = createOpenAI({
-  apiKey: process.env.OPENAI_API_KEY!,
+export const anthropic = createAnthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY!,
 });
 
 /**

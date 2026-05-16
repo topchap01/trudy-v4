@@ -6,8 +6,10 @@
  * - On finalize, snapshots to POST /api/campaigns/:id/phaseRuns with { phase:'SYNTHESIS', text, meta }.
  */
 export function startSynthesisStream({ campaignId, prompt = '', debug = false, onToken, onDone, onError }) {
+  if (!campaignId) throw new Error('campaignId is required for synthesis stream');
+
   const qs = new URLSearchParams();
-  if (campaignId) qs.set('campaignId', campaignId);
+  qs.set('campaignId', campaignId);
   if (prompt) qs.set('prompt', prompt);
   if (debug) qs.set('debug', '1');
 
@@ -19,6 +21,11 @@ export function startSynthesisStream({ campaignId, prompt = '', debug = false, o
 
   function safeClose() {
     try { es.close(); } catch {}
+  }
+
+  function authHeaders() {
+    const devEmail = localStorage.getItem('devEmail') || import.meta.env?.VITE_DEV_EMAIL;
+    return devEmail ? { 'x-user-email': devEmail, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
   }
 
   async function snapshotAndFinish(finalObj) {
@@ -36,7 +43,7 @@ export function startSynthesisStream({ campaignId, prompt = '', debug = false, o
       try {
         await fetch(`/api/campaigns/${campaignId}/phaseRuns`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders(),
           body: JSON.stringify({ phase: 'SYNTHESIS', text, meta }),
         });
       } catch {
