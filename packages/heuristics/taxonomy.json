@@ -1,0 +1,127 @@
+{
+  "version": "2026-05-16",
+  "description": "Canonical taxonomy shared between Trudy v4 and Cowork scheduled tasks. This is the single source of truth for classification terms. When adding or renaming terms here, update the corresponding Cowork task prompts.",
+
+  "mechanics": {
+    "description": "Promotional mechanic types. Trudy uses 'mechanic' field, Cowork uses 'technique'.",
+    "values": [
+      "Cashback",
+      "Instant Win",
+      "Prize Draw (Single)",
+      "Prize Draw (Multi)",
+      "GWP",
+      "Bundle Deal",
+      "Trade-In",
+      "Extended Warranty",
+      "Finance / Interest-Free",
+      "Percentage Discount",
+      "Competition",
+      "Collect-to-Win",
+      "Conditional",
+      "Unique Code",
+      "1-in-X",
+      "Sweepstake"
+    ]
+  },
+
+  "categories": {
+    "description": "Product/industry categories tracked across monitoring and evaluation.",
+    "values": [
+      "Laundry",
+      "Refrigeration",
+      "Dishwashers",
+      "Cooking",
+      "Small Kitchen Appliances",
+      "Vacuum / Floor Care",
+      "Air Treatment",
+      "RTD Spirit",
+      "Beer",
+      "Wine",
+      "Personal Care",
+      "Beverages",
+      "Biscuits & Snacks",
+      "FMCG",
+      "Tyres",
+      "Retail"
+    ]
+  },
+
+  "brands": {
+    "clients": [
+      { "name": "Electrolux", "domain": "electrolux.com.au", "categories": ["Laundry", "Refrigeration", "Dishwashers", "Cooking", "Vacuum / Floor Care", "Air Treatment"] },
+      { "name": "Westinghouse", "domain": "westinghouse.com.au", "categories": ["Laundry", "Refrigeration", "Dishwashers", "Cooking"] },
+      { "name": "Vinarchy", "domain": null, "categories": ["Wine"] },
+      { "name": "Boss Coffee", "domain": null, "categories": ["Beverages"] },
+      { "name": "Jacob's Creek", "domain": null, "categories": ["Wine"] },
+      { "name": "Grant Burge", "domain": null, "categories": ["Wine"] },
+      { "name": "Croser", "domain": null, "categories": ["Wine"] }
+    ],
+    "competitors": [
+      { "name": "Samsung", "domain": "samsung.com/au/", "categories": ["Laundry", "Refrigeration", "Dishwashers", "Cooking", "Vacuum / Floor Care", "Air Treatment"] },
+      { "name": "LG", "domain": "lg.com/au/", "categories": ["Laundry", "Refrigeration", "Dishwashers", "Cooking", "Air Treatment"] },
+      { "name": "Bosch", "domain": "bosch-home.com.au", "categories": ["Laundry", "Refrigeration", "Dishwashers", "Cooking"] },
+      { "name": "Miele", "domain": "miele.com.au", "categories": ["Laundry", "Refrigeration", "Dishwashers", "Cooking", "Vacuum / Floor Care"] },
+      { "name": "Fisher & Paykel", "domain": "fisherpaykel.com/au/", "categories": ["Laundry", "Refrigeration", "Dishwashers", "Cooking"] },
+      { "name": "Haier", "domain": "haier.com/au/", "categories": ["Laundry", "Refrigeration", "Dishwashers", "Cooking", "Air Treatment"] },
+      { "name": "Hisense", "domain": "hisense.com.au", "categories": ["Laundry", "Refrigeration", "Air Treatment"] },
+      { "name": "Breville", "domain": "breville.com/au/", "categories": ["Small Kitchen Appliances"] },
+      { "name": "Dyson", "domain": "dyson.com.au", "categories": ["Vacuum / Floor Care", "Air Treatment"] }
+    ]
+  },
+
+  "retailers": {
+    "AU": [
+      { "name": "Coles", "type": "grocery", "notes": "Flybuys leverage, clean POS, measurable uplift" },
+      { "name": "Woolworths", "type": "grocery", "notes": "Everyday Rewards tie-in, family-safe UGC" },
+      { "name": "IGA", "type": "grocery", "notes": "Community angle, local legend assets, simpler ops" },
+      { "name": "Harvey Norman", "type": "electrical", "notes": "Aggressive bot detection on website" },
+      { "name": "JB Hi-Fi", "type": "electrical", "notes": null },
+      { "name": "The Good Guys", "type": "electrical", "notes": null },
+      { "name": "Bing Lee", "type": "electrical", "notes": null },
+      { "name": "Appliances Online", "type": "electrical", "notes": null },
+      { "name": "Myer", "type": "department", "notes": null }
+    ],
+    "NZ": [
+      { "name": "Noel Leeming", "type": "electrical", "notes": null },
+      { "name": "Harvey Norman NZ", "type": "electrical", "notes": null }
+    ]
+  },
+
+  "oneJob": {
+    "description": "The One Job Rule from The Shelf Truth. Every promotion should have one primary objective.",
+    "values": [
+      { "code": "BREAKER", "label": "Trial", "description": "Get someone who doesn't buy you to buy you once" },
+      { "code": "CONVERTER", "label": "Conversion", "description": "Move from consideration to purchase" },
+      { "code": "BUILDER", "label": "Frequency", "description": "Get existing buyers to buy more often" },
+      { "code": "LOADER", "label": "Basket", "description": "Get buyers to spend more per occasion" },
+      { "code": "HARVESTER", "label": "Data", "description": "Capture first-party data and behaviour signals" },
+      { "code": "KEEPER", "label": "Loyalty", "description": "Retain existing customers against competitor activity" }
+    ]
+  },
+
+  "seasons": {
+    "description": "Seasonal promotional windows relevant to the Australian market.",
+    "values": [
+      { "code": "EOFY", "months": [5, 6], "notes": "End of financial year sales" },
+      { "code": "BACK_TO_SCHOOL", "months": [1, 2], "notes": "January/February" },
+      { "code": "EASTER", "months": [3, 4], "notes": "Variable dates" },
+      { "code": "MOTHERS_DAY", "months": [5], "notes": "Second Sunday in May" },
+      { "code": "FATHERS_DAY", "months": [9], "notes": "First Sunday in September (AU)" },
+      { "code": "BLACK_FRIDAY", "months": [11], "notes": "Late November" },
+      { "code": "CHRISTMAS", "months": [11, 12], "notes": "November through December" },
+      { "code": "BOXING_DAY", "months": [12, 1], "notes": "Post-Christmas sales" },
+      { "code": "SUMMER", "months": [12, 1, 2], "notes": "Peak for air treatment, beverages" },
+      { "code": "WINTER", "months": [6, 7, 8], "notes": "Peak for heating, comfort food" }
+    ]
+  },
+
+  "riskLevels": ["SAFE", "BALANCED", "BOLD"],
+
+  "verdicts": ["GO", "TUNE", "NO_GO"],
+
+  "channels": [
+    "INSTORE", "ONLINE", "SOCIAL", "SEARCH", "TV", "OOH",
+    "SHOPPER", "CRM", "PR", "INFLUENCER", "RETAIL_MEDIA",
+    "WEBSITE", "APP", "SMS", "EMAIL"
+  ]
+}
