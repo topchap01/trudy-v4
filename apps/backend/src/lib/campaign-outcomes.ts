@@ -16,6 +16,13 @@ export type SfPrize = {
   type: string
 }
 
+export type SfCashbackRange = {
+  name: string
+  cashbackValue: number
+  minSpend: number
+  maxSpend: number | null
+}
+
 export type SfCampaign = {
   id: string
   name: string
@@ -32,7 +39,7 @@ export type SfCampaign = {
   majorPrizeValue?: number | null
   totalPrizePoolValue?: number | null
   prizes?: SfPrize[]
-  cashbackRanges?: unknown[]
+  cashbackRanges?: SfCashbackRange[]
   micrositeUrl?: string | null
 }
 
@@ -120,6 +127,7 @@ export type CampaignSummary = {
     claimed: number
     claimRate: number
   }>
+  cashbackTiers: SfCashbackRange[]
   overallClaimRate: number | null
   micrositeUrl: string | null
 }
@@ -171,6 +179,7 @@ function toSummary(c: SfCampaign): CampaignSummary {
     totalPrizePoolValue: c.totalPrizePoolValue ?? null,
     majorPrizeValue: c.majorPrizeValue ?? null,
     prizeLadder,
+    cashbackTiers: Array.isArray(c.cashbackRanges) ? c.cashbackRanges : [],
     overallClaimRate,
     micrositeUrl: c.micrositeUrl ?? null,
   }

@@ -338,6 +338,17 @@ function augmentWithCampaignOutcomes(
       `overall prize claim rate ${Math.round(sf.matched.aggregateClaimRate * 100)}%`
     )
   }
+  // Cashback campaigns don't carry prize claim data; expose tier structure instead.
+  const allCashbackTiers = sf.matched.top.flatMap((c) => c.cashbackTiers)
+  if (allCashbackTiers.length > 0) {
+    const cbValues = allCashbackTiers.map((t) => t.cashbackValue).filter((v): v is number => v != null)
+    const minSpends = allCashbackTiers.map((t) => t.minSpend).filter((v): v is number => v != null)
+    if (cbValues.length && minSpends.length) {
+      factParts.push(
+        `cashback structures: $${Math.min(...cbValues).toLocaleString()}–$${Math.max(...cbValues).toLocaleString()} cashback against $${Math.min(...minSpends).toLocaleString()}–$${Math.max(...minSpends).toLocaleString()} spend thresholds`
+      )
+    }
+  }
   const topCampaign = sf.matched.top[0]
   if (topCampaign) {
     const claimNote =
@@ -370,6 +381,18 @@ function augmentWithCampaignOutcomes(
         )
         .join(', ')
       outcomeParts.push(`top ladder rungs: ${ladderDesc}`)
+    }
+    if (c.cashbackTiers.length) {
+      const tierDesc = c.cashbackTiers
+        .map((t) => {
+          const spendRange =
+            t.maxSpend != null
+              ? `$${t.minSpend.toLocaleString()}–$${t.maxSpend.toLocaleString()}`
+              : `$${t.minSpend.toLocaleString()}+`
+          return `${spendRange} → $${t.cashbackValue.toLocaleString()}`
+        })
+        .join('; ')
+      outcomeParts.push(`cashback tiers: ${tierDesc}`)
     }
     return {
       brand: c.clientName ?? 'Unknown client',
