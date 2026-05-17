@@ -5,8 +5,8 @@
 
 import { chat, chatFull } from '../lib/openai.js'
 import { resolveModel } from '../lib/models.js'
-import { SHELF_CONSTITUTION, PROVOCATEUR_SYSTEM, PRAGMATIST_SYSTEM } from './constitution.js'
-import type { CampaignRoute, EvaluationVerdict, BudgetScenario, RetailerPitch } from './trevor-schema.js'
+import { SHELF_CONSTITUTION, PROVOCATEUR_SYSTEM, PRAGMATIST_SYSTEM, CREATIVE_DIRECTOR_SYSTEM } from './constitution.js'
+import type { CampaignRoute, EvaluationVerdict, BudgetScenario, RetailerPitch, HeadlineAngle, CreativeDirectorBlock } from './trevor-schema.js'
 
 // ---------------------------------------------------------------------------
 // Input types
@@ -127,6 +127,34 @@ async function scoreProvocateur(
   })
   const p = safeParseJSON<{ provocateurScore: number; provocateurNote: string }>(raw, scope)
   return { provocateurScore: clamp(p.provocateurScore ?? 5), provocateurNote: p.provocateurNote ?? '' }
+}
+
+// ---------------------------------------------------------------------------
+// Creative Director — produces 5 distinctly-positioned headlines + a signature moment
+// ---------------------------------------------------------------------------
+
+async function scoreCreativeDirector(
+  content: string, briefCtx: string, scope: string,
+): Promise<CreativeDirectorBlock> {
+  const raw = await chat({
+    model: getModel(),
+    system: CREATIVE_DIRECTOR_SYSTEM,
+    messages: [{ role: 'user', content: [
+      `Produce five distinctly-positioned headlines (one per lens — TRANSACTIONAL, CULTURAL_MOMENT, BRAND_TRUTH, EMOTIONAL_JOB, WILDCARD), plus one signatureMoment, for this campaign.`,
+      '', briefCtx, '', content, '',
+      `Use the research dossier's culturalMoments where present. Reference observed competitor activity to differentiate. Each headline must follow the message hierarchy: trigger word, prize, quantity, odds, cost to enter.`,
+      `Respond with JSON: { "score": <1-10>, "note": "<3-4 sentences — name the strongest, name the one the brand will reject, explain why>", "headlineAngles": [{ "lens": "TRANSACTIONAL"|"CULTURAL_MOMENT"|"BRAND_TRUTH"|"EMOTIONAL_JOB"|"WILDCARD", "headline": "<6-14 words>", "subhead": "<optional 10-15 words>", "rationale": "<1-2 sentences — why this lens, why this line, what behavioural insight>", "pilot": "GAMBLER"|"ACCOUNTANT"|"HYBRID" }, ...exactly 5 entries, one per lens], "signatureMoment": "<the scene people will talk about — concrete, shareable, proprietary>" }`,
+    ].join('\n') }],
+    json: true, max_output_tokens: 1800,
+    meta: { scope: `shelf.${scope}` },
+  })
+  const p = safeParseJSON<CreativeDirectorBlock>(raw, scope)
+  return {
+    score: clamp(p.score ?? 5),
+    note: p.note ?? '',
+    headlineAngles: Array.isArray(p.headlineAngles) ? p.headlineAngles : [],
+    signatureMoment: p.signatureMoment ?? '',
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -346,17 +374,18 @@ WHAT MAKES AN EVALUATION BRILLIANT:
   const verdict = safeParseJSON<EvaluationVerdict>(result.text, 'evaluate')
   console.info(`[shelf.evaluate] Verdict: ${verdict.verdict}. Scoring...`)
 
-  // Steps 2+3 — Provocateur + Pragmatist in parallel.
+  // Steps 2+3+4 — Provocateur, Pragmatist, Creative Director in parallel.
   // Synthesise a one-liner from structured fields when no free-text idea was supplied.
   const ideaContent = input.idea?.trim()
     ? `<additional_context>\n${input.idea}\n</additional_context>`
     : `<campaign_summary>${[input.mechanic, input.rewardDescription, input.headline].filter(Boolean).join(' — ')}</campaign_summary>`
-  const [prov, prag] = await Promise.all([
+  const [prov, prag, creative] = await Promise.all([
     scoreProvocateur(ideaContent, briefXML, 'provocateur-eval'),
     scorePragmatist(ideaContent, briefXML, 'pragmatist-eval'),
+    scoreCreativeDirector(ideaContent, briefXML, 'creative-director-eval'),
   ])
 
-  // Merge Provocateur + Pragmatist as separate top-level fields (NOT mixed into whatToChange/whatBreaks)
+  // Merge each agent as a separate top-level field (NOT mixed into whatToChange/whatBreaks)
   ;(verdict as any).provocateur = {
     score: prov.provocateurScore,
     note: prov.provocateurNote,
@@ -367,6 +396,7 @@ WHAT MAKES AN EVALUATION BRILLIANT:
     budgetScenarios: prag.budgetScenarios,
     retailerPitch: prag.retailerPitch,
   }
+  ;(verdict as any).creativeDirector = creative
   // Only backfill budget scenarios if the main evaluation didn't produce them
   if (prag.budgetScenarios?.length && !verdict.budgetScenarios?.length)
     verdict.budgetScenarios = prag.budgetScenarios
@@ -403,13 +433,54 @@ async function generateAlternatives(input: EvaluateIdeaInput, verdict: Evaluatio
       `<what_breaks>\n- ${breaks}\n</what_breaks>`,
       '', briefXML, '',
       'Generate exactly 3 alternative routes that KEEP what works but FIX what breaks.',
-      'Each route uses a different mechanic. Respond with a JSON array. No markdown, no prose.',
+      '',
+      'CRITICAL — each route must occupy a distinct ambition zone:',
+      '  Route 1 (ambitionZone: "SAFE")        — a proven category mechanic with disciplined execution. Low risk, predictable outcomes. A category manager will say yes in 10 seconds.',
+      '  Route 2 (ambitionZone: "BOLD")        — twists a convention. Adds a cultural moment, a partnership, a content layer, or a new dimension the category isn\'t doing. A category manager will say yes after asking a question.',
+      '  Route 3 (ambitionZone: "RIDICULOUS")  — would make a Coles category manager raise an eyebrow before they say yes. Genuinely surprising. May involve a partnership, a content franchise, an unusual fulfilment mechanism, or a flipped category convention. The Pragmatist might score this lower but the Provocateur will love it. The brand team can then decide if they\'re brave enough.',
+      '',
+      'Each route uses a different mechanic AND occupies its assigned ambition zone. Do not produce three SAFE routes dressed up.',
+      'For each route, include an "ambitionZone" field with the assigned value.',
+      'Respond with a JSON array. No markdown, no prose.',
     ].join('\n') }],
-    json: true, max_output_tokens: 8000,
+    json: true, max_output_tokens: 10000,
     meta: { scope: 'shelf.alternatives' },
   })
 
   const alts = safeParseJSON<CampaignRoute[]>(raw, 'alternatives')
   if (!Array.isArray(alts)) throw new Error('[shelf.alternatives] Expected array, got: ' + typeof alts)
-  return alts
+
+  // Layer in Creative Director output per alternative — headline angles + signature moment.
+  // Use a defensive content builder because alt routes can have leaner shapes than full
+  // CampaignRoute (no messageHierarchy / frictionProfile nesting).
+  const altsWithCreative = await Promise.all(
+    alts.map(async (route) => {
+      try {
+        const r = route as any
+        const altContent = [
+          '<route>',
+          `Name: ${r.name ?? r.route_name ?? 'unnamed'} | Job: ${r.oneJob ?? r.one_job ?? ''} | Mechanic: ${r.mechanic ?? ''}`,
+          `Ambition zone: ${r.ambitionZone ?? r.ambition_zone ?? 'unknown'}`,
+          `Concept: ${r.concept ?? r.how_it_works ?? ''}`,
+          `Working headline (to be improved): ${r.headline ?? r.messageHierarchy?.headline ?? ''}`,
+          `Prize architecture: ${r.prizeArchitecture ?? r.reward ?? ''}`,
+          `Friction design: ${r.frictionDesign ?? r.friction ?? ''}`,
+          `What this fixes from original: ${r.whatThisFixesFromOriginal ?? r.what_this_fixes ?? ''}`,
+          '</route>',
+        ].join('\n')
+        const zoneTag = r.ambitionZone ?? r.ambition_zone ?? 'unknown'
+        const creative = await scoreCreativeDirector(altContent, briefXML, `alt-creative-${zoneTag}`)
+        return {
+          ...route,
+          headlineAngles: creative.headlineAngles,
+          signatureMoment: creative.signatureMoment,
+        }
+      } catch (err: any) {
+        console.error(`[shelf.alternatives] Creative Director failed for route "${(route as any).name}":`, err?.message)
+        return route
+      }
+    }),
+  )
+
+  return altsWithCreative
 }

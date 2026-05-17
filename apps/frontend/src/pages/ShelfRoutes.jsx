@@ -50,6 +50,42 @@ function Badge({ children, className = '' }) {
   )
 }
 
+/* ── Creative Director: lens-tagged headline card ──────────────── */
+const LENS_STYLE = {
+  TRANSACTIONAL:   { label: 'Transactional',   chip: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' },
+  CULTURAL_MOMENT: { label: 'Cultural Moment', chip: 'bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-200' },
+  BRAND_TRUTH:     { label: 'Brand Truth',     chip: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200' },
+  EMOTIONAL_JOB:   { label: 'Emotional Job',   chip: 'bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-200' },
+  WILDCARD:        { label: 'Wildcard',        chip: 'bg-fuchsia-100 text-fuchsia-800 dark:bg-fuchsia-900 dark:text-fuchsia-200' },
+}
+
+function HeadlineAngleCard({ angle }) {
+  const lens = LENS_STYLE[angle.lens] || LENS_STYLE.TRANSACTIONAL
+  return (
+    <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3">
+      <div className="flex items-center gap-2 mb-1.5">
+        <Badge className={lens.chip}>{lens.label}</Badge>
+        {angle.pilot && <Badge className="bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400">{angle.pilot}</Badge>}
+      </div>
+      <p className="text-base font-semibold text-gray-900 dark:text-white leading-snug">{angle.headline}</p>
+      {angle.subhead && <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">{angle.subhead}</p>}
+      {angle.rationale && <p className="text-xs text-gray-500 dark:text-gray-500 italic mt-2">{angle.rationale}</p>}
+    </div>
+  )
+}
+
+/* ── Ambition zone badge (SAFE / BOLD / RIDICULOUS) ────────────── */
+const AMBITION_STYLE = {
+  SAFE:       'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200 border-slate-300',
+  BOLD:       'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200 border-amber-400',
+  RIDICULOUS: 'bg-fuchsia-100 text-fuchsia-800 dark:bg-fuchsia-900 dark:text-fuchsia-200 border-fuchsia-400',
+}
+function AmbitionBadge({ zone }) {
+  if (!zone) return null
+  const cls = AMBITION_STYLE[zone] || AMBITION_STYLE.SAFE
+  return <span className={`inline-block rounded-full border px-2.5 py-0.5 text-xs font-bold uppercase tracking-wider ${cls}`}>{zone}</span>
+}
+
 /* ── Route Card (Mode 1) ───────────────────────────────────────── */
 function RouteCard({ route, onSelect }) {
   const threeSecond = route.threeSecondScore || route.three_second_score || {}
@@ -140,9 +176,12 @@ function EvaluationResult({ data }) {
   const oneJob = data.oneJob || data.one_job || ''
   const oneJobIssue = data.oneJobIssue || data.one_job_issue || ''
   const frictionAudit = data.frictionAudit || data.friction_audit || null
-  // Provocateur and Pragmatist as separate voices
+  // Provocateur, Pragmatist, Creative Director as separate voices
   const provocateur = data.provocateur || {}
   const pragmatist = data.pragmatist || {}
+  const creativeDirector = data.creativeDirector || data.creative_director || {}
+  const headlineAngles = Array.isArray(creativeDirector.headlineAngles) ? creativeDirector.headlineAngles : []
+  const signatureMoment = creativeDirector.signatureMoment || creativeDirector.signature_moment || ''
   const threeSecondInterpretation = threeSecond.interpretation || threeSecond.narrative || ''
   const msgCurrent = msgObj.current || null
   const msgImproved = msgObj.improved || msg
@@ -437,6 +476,32 @@ function EvaluationResult({ data }) {
         </div>
       )}
 
+      {/* Creative Director — 5 distinctly-positioned headlines + signature moment */}
+      {(headlineAngles.length > 0 || signatureMoment || creativeDirector.note) && (
+        <Section title="The Creative Director">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-xs font-semibold text-fuchsia-600 dark:text-fuchsia-400 uppercase">Headline Craft</span>
+            {creativeDirector.score != null && <span className="text-sm font-bold text-fuchsia-700 dark:text-fuchsia-300">{creativeDirector.score}/10</span>}
+          </div>
+          {creativeDirector.note && (
+            <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed mb-4">{creativeDirector.note}</p>
+          )}
+          {headlineAngles.length > 0 && (
+            <div className="space-y-3 mb-4">
+              {headlineAngles.map((angle, i) => (
+                <HeadlineAngleCard key={i} angle={angle} />
+              ))}
+            </div>
+          )}
+          {signatureMoment && (
+            <div className="mt-4 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 p-4">
+              <div className="text-xs font-semibold text-amber-700 dark:text-amber-300 uppercase mb-1">Signature Moment</div>
+              <p className="text-sm text-amber-900 dark:text-amber-100 leading-relaxed">{signatureMoment}</p>
+            </div>
+          )}
+        </Section>
+      )}
+
       {/* Friction Audit */}
       {frictionAudit && (frictionAudit.rationale || frictionAudit.fieldsToRemove?.length || frictionAudit.fieldsToAdd?.length) && (
         <Section title="Friction Audit">
@@ -481,47 +546,77 @@ function EvaluationResult({ data }) {
         </Section>
       )}
 
-      {/* Alternative Routes (if REWORK) — full strategic options, not stubs */}
+      {/* Alternative Routes (if REWORK) — full strategic options across SAFE / BOLD / RIDICULOUS ambition zones */}
       {verdictStr === 'REWORK' && alternativeRoutes.length > 0 && (
         <Section title="Alternative Routes">
-          <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">Each route keeps what works from the original but fixes what breaks — using a different mechanic.</p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">Three routes across the ambition spectrum — each keeps what works, fixes what breaks, and proposes its own creative range.</p>
           <div className="space-y-6">
-            {alternativeRoutes.map((alt, i) => (
-              <div key={i} className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 overflow-hidden">
-                <div className="bg-gray-50 dark:bg-gray-800 px-5 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-                  <h4 className="font-semibold text-gray-900 dark:text-white">{alt.name || alt.route_name || `Alternative ${i + 1}`}</h4>
-                  <div className="flex gap-2">
-                    {(alt.oneJob || alt.one_job) && <Badge className="bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-200">{alt.oneJob || alt.one_job}</Badge>}
-                    {alt.mechanic && <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">{alt.mechanic}</Badge>}
+            {alternativeRoutes.map((alt, i) => {
+              const altAngles = Array.isArray(alt.headlineAngles) ? alt.headlineAngles : (Array.isArray(alt.headline_angles) ? alt.headline_angles : [])
+              const altSignature = alt.signatureMoment || alt.signature_moment || ''
+              const altZone = alt.ambitionZone || alt.ambition_zone || null
+              return (
+                <div key={i} className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 overflow-hidden">
+                  <div className="bg-gray-50 dark:bg-gray-800 px-5 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-3">
+                      <AmbitionBadge zone={altZone} />
+                      <h4 className="font-semibold text-gray-900 dark:text-white">{alt.name || alt.route_name || `Alternative ${i + 1}`}</h4>
+                    </div>
+                    <div className="flex gap-2">
+                      {(alt.oneJob || alt.one_job) && <Badge className="bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-200">{alt.oneJob || alt.one_job}</Badge>}
+                      {alt.mechanic && <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">{alt.mechanic}</Badge>}
+                    </div>
+                  </div>
+                  <div className="px-5 py-4 space-y-4">
+                    {(alt.concept || alt.how_it_works) && (
+                      <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{alt.concept || alt.how_it_works}</p>
+                    )}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                      {(alt.prizeArchitecture || alt.reward) && (
+                        <div><span className="font-semibold text-gray-500 uppercase">Prizes</span><p className="text-gray-700 dark:text-gray-300 mt-0.5">{alt.prizeArchitecture || alt.reward}</p></div>
+                      )}
+                      {(alt.frictionDesign || alt.friction) && (
+                        <div><span className="font-semibold text-gray-500 uppercase">Friction</span><p className="text-gray-700 dark:text-gray-300 mt-0.5">{alt.frictionDesign || alt.friction}</p></div>
+                      )}
+                      {(alt.whatThisFixesFromOriginal || alt.what_this_fixes) && (
+                        <div><span className="font-semibold text-green-600 dark:text-green-400 uppercase">What this fixes</span><p className="text-gray-700 dark:text-gray-300 mt-0.5">{alt.whatThisFixesFromOriginal || alt.what_this_fixes}</p></div>
+                      )}
+                      {alt.budget_protection && (
+                        <div><span className="font-semibold text-gray-500 uppercase">Budget</span><p className="text-gray-700 dark:text-gray-300 mt-0.5">{alt.budget_protection}</p></div>
+                      )}
+                      {alt.retailer_pitch && (
+                        <div><span className="font-semibold text-gray-500 uppercase">Retailer pitch</span><p className="text-gray-700 dark:text-gray-300 mt-0.5">{alt.retailer_pitch}</p></div>
+                      )}
+                    </div>
+
+                    {/* Five-lens headlines for this route */}
+                    {altAngles.length > 0 && (
+                      <div>
+                        <div className="text-xs font-semibold text-fuchsia-600 dark:text-fuchsia-400 uppercase mb-2">Headline craft — 5 angles</div>
+                        <div className="space-y-2">
+                          {altAngles.map((angle, j) => <HeadlineAngleCard key={j} angle={angle} />)}
+                        </div>
+                      </div>
+                    )}
+                    {/* Fallback: single headline if no angles supplied */}
+                    {altAngles.length === 0 && alt.headline && (
+                      <div className="text-xs">
+                        <span className="font-semibold text-gray-500 uppercase">Headline</span>
+                        <p className="text-gray-700 dark:text-gray-300 font-medium mt-0.5">{alt.headline}</p>
+                      </div>
+                    )}
+
+                    {/* Signature moment for this route */}
+                    {altSignature && (
+                      <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 p-3">
+                        <div className="text-xs font-semibold text-amber-700 dark:text-amber-300 uppercase mb-1">Signature Moment</div>
+                        <p className="text-sm text-amber-900 dark:text-amber-100 leading-relaxed">{altSignature}</p>
+                      </div>
+                    )}
                   </div>
                 </div>
-                <div className="px-5 py-4 space-y-3">
-                  {(alt.concept || alt.how_it_works) && (
-                    <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{alt.concept || alt.how_it_works}</p>
-                  )}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                    {alt.headline && (
-                      <div><span className="font-semibold text-gray-500 uppercase">Headline</span><p className="text-gray-700 dark:text-gray-300 font-medium mt-0.5">{alt.headline}</p></div>
-                    )}
-                    {(alt.prizeArchitecture || alt.reward) && (
-                      <div><span className="font-semibold text-gray-500 uppercase">Prizes</span><p className="text-gray-700 dark:text-gray-300 mt-0.5">{alt.prizeArchitecture || alt.reward}</p></div>
-                    )}
-                    {(alt.frictionDesign || alt.friction) && (
-                      <div><span className="font-semibold text-gray-500 uppercase">Friction</span><p className="text-gray-700 dark:text-gray-300 mt-0.5">{alt.frictionDesign || alt.friction}</p></div>
-                    )}
-                    {(alt.whatThisFixesFromOriginal || alt.what_this_fixes) && (
-                      <div><span className="font-semibold text-green-600 dark:text-green-400 uppercase">What this fixes</span><p className="text-gray-700 dark:text-gray-300 mt-0.5">{alt.whatThisFixesFromOriginal || alt.what_this_fixes}</p></div>
-                    )}
-                    {alt.budget_protection && (
-                      <div><span className="font-semibold text-gray-500 uppercase">Budget</span><p className="text-gray-700 dark:text-gray-300 mt-0.5">{alt.budget_protection}</p></div>
-                    )}
-                    {alt.retailer_pitch && (
-                      <div><span className="font-semibold text-gray-500 uppercase">Retailer pitch</span><p className="text-gray-700 dark:text-gray-300 mt-0.5">{alt.retailer_pitch}</p></div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </Section>
       )}

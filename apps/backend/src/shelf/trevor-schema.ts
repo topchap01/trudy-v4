@@ -102,6 +102,34 @@ export const RetailerPitchSchema = z.object({
   sales: z.string(), // one sentence with maths
 })
 
+// Creative Director — positioning lenses for headline craft
+export const HeadlineLensEnum = z.enum([
+  'TRANSACTIONAL',     // the obvious baseline — what 90% of category does
+  'CULTURAL_MOMENT',   // tied to what's happening now (winter, cost of living, EOFY, etc.)
+  'BRAND_TRUTH',       // anchored in what the brand actually stands for
+  'EMOTIONAL_JOB',     // what the shopper feels (life-stage truth, self-investment, etc.)
+  'WILDCARD',          // the unexpected angle that flips category convention
+])
+
+export const HeadlineAngleSchema = z.object({
+  lens: HeadlineLensEnum,
+  headline: z.string(),         // 6-14 words, follows the message hierarchy
+  subhead: z.string().optional(),
+  rationale: z.string(),        // why this lens / why this line — 1-2 sentences
+  pilot: z.enum(['GAMBLER', 'ACCOUNTANT', 'HYBRID']).optional(),
+})
+
+// Creative Director block — runs alongside Provocateur + Pragmatist
+export const CreativeDirectorSchema = z.object({
+  score: z.number().min(1).max(10),
+  note: z.string(),
+  headlineAngles: z.array(HeadlineAngleSchema), // five lenses, one entry per lens
+  signatureMoment: z.string(), // "the scene people will talk about"
+})
+
+// Ambition zone — drives the SAFE/BOLD/RIDICULOUS spread on alternative routes
+export const AmbitionZoneEnum = z.enum(['SAFE', 'BOLD', 'RIDICULOUS'])
+
 // A single campaign route — the core output unit
 export const CampaignRouteSchema = z.object({
   id: z.string(),
@@ -141,6 +169,15 @@ export const CampaignRouteSchema = z.object({
   provocateurNote: z.string().optional(),
   pragmatistScore: z.number().min(1).max(10).optional(),
   pragmatistNote: z.string().optional(),
+
+  // Ambition zone — assigned when generated as part of a SAFE/BOLD/RIDICULOUS trio
+  ambitionZone: AmbitionZoneEnum.optional(),
+
+  // Signature moment — the scene people will talk about (Mark's 2024 vision: "scene people will talk about")
+  signatureMoment: z.string().optional(),
+
+  // Creative headline craft — 5 positioning angles, one per lens
+  headlineAngles: z.array(HeadlineAngleSchema).optional(),
 
   // Dates (optional, from brief)
   suggestedDurationDays: z.number().int().optional(),
@@ -210,3 +247,7 @@ export type MessageHierarchy = z.infer<typeof MessageHierarchySchema>
 export type RetailerPitch = z.infer<typeof RetailerPitchSchema>
 export type BudgetScenario = z.infer<typeof BudgetScenarioSchema>
 export type ThreeSecondScore = z.infer<typeof ThreeSecondScoreSchema>
+export type HeadlineLens = z.infer<typeof HeadlineLensEnum>
+export type HeadlineAngle = z.infer<typeof HeadlineAngleSchema>
+export type CreativeDirectorBlock = z.infer<typeof CreativeDirectorSchema>
+export type AmbitionZone = z.infer<typeof AmbitionZoneEnum>
