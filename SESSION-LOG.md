@@ -4,6 +4,69 @@ Shared handoff log between Claude Code sessions, Cowork sessions, and Mark. **Ne
 
 ---
 
+## 2026-05-17 (late night) — Portal Session 1A shipped: foundation, nav, KV scaffold
+
+**Actor:** Claude Code (Opus 4.7, 1M context) — working in `~/Documents/nebula-logger-dashboard`
+
+### Summary
+
+Session 1A of the staff-portal build per `PORTAL-BUILD-SPEC.md` (on Mark's Desktop). Restructured the Nebula Logger repo in place to become the Trevor Staff Portal shell. The portal now has a real sidebar, a real landing page, the existing Logger + Campaign Reports still work unchanged, and the Vercel KV push/read endpoints are scaffolded so Cowork tasks can start streaming intelligence data to it. Five "coming soon" placeholder pages mark where Sessions 2–4 will land.
+
+### Repo handoff note
+
+**Portal lives at:** `~/Documents/nebula-logger-dashboard` (deployed to `nebula-logger-dashboard.vercel.app`). Future portal sessions should `cd` there, not into trudy-v4. The trudy-v4 repo continues to be Mark's local Trudy dev environment — both repos coexist.
+
+**Commit shipped this session:** `246c76c` in `nebula-logger-dashboard` repo.
+
+### Decisions taken with Mark's "default" green-light
+
+- **In-place restructure** of Nebula Logger (not a new `trevor-portal` repo) — Vercel deploy + SF env vars already configured, lower risk
+- **Vercel Pro assumed** for the 60s+ function timeout Trudy needs. Will also implement SSE streaming from day one so we're not solely dependent on the timeout limit
+- **Domain stays** `nebula-logger-dashboard.vercel.app` for now — custom domain can come later
+- **Tighter Session 1 scope:** Split the spec's Session 1 (which bundled auth + KV + everything) into **Session 1A (this — foundation)** and **Session 1B (next — NextAuth + Google + allowlist)**. Auth is its own integration with its own failure modes; cleaner to ship it separately.
+
+### What landed (Session 1A)
+
+| Area | What |
+|---|---|
+| Restructure | `app/page.js` (Nebula Logger homepage) → `app/logger/page.js` unchanged. New `app/page.js` is the Trevor Portal landing with 4 section cards. `app/campaigns/` stays as-is. |
+| Layout shell | `app/layout.js` now wraps children in a sticky sidebar + main column. `components/Nav.jsx` (new) holds the sidebar — 4 sections, 9 nav items, active highlighting, "soon" badges on placeholders. |
+| Design | Extended `app/globals.css` with portal-shell / portal-sidebar / portal-link / portal-landing / portal-placeholder classes using the existing CSS variable design tokens (`--bg`, `--card`, `--accent`, etc.). Existing `.container` / `.card` / `.metric` patterns continue to work unchanged. Mobile: sidebar collapses to top bar under 768px. |
+| Placeholders | `/intel/{seo,promos,outcomes,wine}`, `/trudy`, `/trudy/history`, `/research` — each notes its data source and which Session will build it. |
+| KV scaffold | `lib/kv.js` with `readIntel(source)` / `writeIntel(source, data)` / `isKvConfigured()`. Falls back gracefully when KV env vars aren't set, so `next dev` keeps working locally. |
+| Push endpoint | `POST /api/intel/push` — bearer-secret-authed (`INTEL_PUSH_SECRET` env var). Body: `{ source, data }`. Cowork tasks call this after writing their local JSON. Sources: `seo`, `promos`, `outcomes`, `wine`. |
+| Read endpoint | `GET /api/intel/[source]` — returns latest payload + `updatedAt` timestamp. Used by upcoming dashboards. |
+| Build | `npm run build` succeeds. 14 routes total (4 existing + 7 new placeholders + 2 new API + landing + _not-found). |
+
+### What did NOT land (intentionally deferred)
+
+- **NextAuth + Google + email allowlist** — Session 1B
+- **Intel dashboards rendering real data** — Session 2 (need KV populated first; need shared `BarChart` / `TrendChart` / `DataTable` extracted from the existing campaigns page)
+- **Trudy port** — Session 3 (the big one: port `runShelfResearch` + `evaluateIdea` + `generateRoutes` to Next.js API routes with SSE streaming)
+- **On-demand competitive research** — Session 4
+- **Two pre-existing uncommitted changes** in `app/api/campaigns/*.js` were left alone — not mine to commit; Mark to handle when he's next in that repo.
+
+### For the next portal session
+
+Read `PORTAL-BUILD-SPEC.md` (Desktop), then this entry, then `cd ~/Documents/nebula-logger-dashboard`.
+
+**Session 1B (recommended next):** NextAuth.js + Google provider + `ALLOWED_EMAILS` env-var allowlist. Mark needs to provision Google OAuth credentials in Google Cloud Console first (or I can walk him through it inline). New session ID at top of SESSION-LOG when complete.
+
+**Cowork's job (parallel, not blocking):** Add the push-to-KV step to each scheduled task's prompt per spec Phase 2. Format:
+```
+curl -X POST https://nebula-logger-dashboard.vercel.app/api/intel/push \
+  -H "Authorization: Bearer ${INTEL_PUSH_SECRET}" \
+  -H "Content-Type: application/json" \
+  -d '{"source": "<seo|promos|outcomes|wine>", "data": <JSON content>}'
+```
+Once Cowork starts pushing, Session 2 can build the dashboards against real data.
+
+### One thing for Mark to do when convenient
+
+Provision the `INTEL_PUSH_SECRET` (any random string — `openssl rand -base64 32` works) and add it to the Vercel project env vars + share with Cowork. Until that's set, `POST /api/intel/push` returns 503 — the endpoint is wired but locked.
+
+---
+
 ## 2026-05-17 (night) — Staff portal architecture decided + build spec written
 
 **Actor:** Cowork (Opus 4.6)
