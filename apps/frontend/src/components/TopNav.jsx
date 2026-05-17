@@ -31,6 +31,7 @@ export default function TopNav() {
       <div className="max-w-6xl mx-auto px-4 h-11 flex items-center gap-1">
         <Link to="/shelf" className="font-semibold tracking-tight text-gray-900 dark:text-gray-100 mr-3">Trudy</Link>
         {navLink('/shelf', 'The Shelf', true)}
+        {navLink('/shelf/history', 'History')}
         {navLink('/dashboard', 'Campaigns')}
         <div className="flex-1" />
         <kbd className="hidden sm:inline-flex items-center gap-1 text-[10px] text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 rounded px-1.5 py-0.5 font-mono mr-2">

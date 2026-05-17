@@ -139,7 +139,11 @@ export default function ShelfBrief() {
   const [loadingCampaignId, setLoadingCampaignId] = useState(null)
 
   useEffect(() => {
-    listCampaigns().then(c => setExistingCampaigns(c || [])).catch(() => {})
+    // Show evaluations first — that's what most users will want to reload or view.
+    // Falls back to all campaigns if the mode-filtered call fails for any reason.
+    listCampaigns({ mode: 'EVALUATION' })
+      .then(c => setExistingCampaigns(c || []))
+      .catch(() => listCampaigns().then(c => setExistingCampaigns(c || [])).catch(() => {}))
   }, [])
 
   const loadCampaign = async (c) => {
@@ -404,37 +408,59 @@ export default function ShelfBrief() {
           </button>
         </div>
 
-        {/* Existing campaigns picker */}
+        {/* Existing campaigns picker — recent evaluations */}
         {existingCampaigns.length > 0 && (
           <div className="mb-8">
-            <button
-              type="button"
-              onClick={() => setShowPicker(!showPicker)}
-              className="text-sm text-gray-500 dark:text-gray-400 hover:text-sky-600 dark:hover:text-sky-400 transition-colors"
-            >
-              {showPicker ? 'Hide' : 'Or load an existing campaign to evaluate'} &rarr;
-            </button>
+            <div className="flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setShowPicker(!showPicker)}
+                className="text-sm text-gray-500 dark:text-gray-400 hover:text-sky-600 dark:hover:text-sky-400 transition-colors"
+              >
+                {showPicker ? 'Hide' : `Recent evaluations (${existingCampaigns.length})`} &rarr;
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/shelf/history')}
+                className="text-xs text-gray-400 dark:text-gray-500 hover:text-sky-600 dark:hover:text-sky-400 transition-colors"
+              >
+                View all in history →
+              </button>
+            </div>
             {showPicker && (
-              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-700 p-3 bg-white dark:bg-gray-900">
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-80 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-700 p-3 bg-white dark:bg-gray-900">
                 {existingCampaigns.map(c => (
-                  <button
+                  <div
                     key={c.id}
-                    type="button"
-                    disabled={loadingCampaignId === c.id}
-                    onClick={() => loadCampaign(c)}
-                    className="text-left rounded-lg border border-gray-200 dark:border-gray-700 p-3 hover:border-sky-400 dark:hover:border-sky-600 hover:bg-sky-50 dark:hover:bg-sky-950 transition-colors disabled:opacity-50"
+                    className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 hover:border-sky-300 dark:hover:border-sky-700 transition-colors flex flex-col gap-2"
                   >
-                    <span className="text-sm font-medium text-gray-900 dark:text-gray-100 block truncate">
-                      {loadingCampaignId === c.id ? 'Loading...' : c.title}
-                    </span>
-                    <span className="text-xs text-gray-500 dark:text-gray-400 block mt-0.5">
-                      {c.clientName || 'No client'} &middot; {c.category || 'No category'} &middot; {c.mode || 'DRAFT'}
-                    </span>
-                  </button>
+                    <div>
+                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100 block truncate">
+                        {c.title}
+                      </span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400 block mt-0.5 truncate">
+                        {c.clientName || 'No client'} &middot; {c.category || 'No category'}
+                      </span>
+                    </div>
+                    <div className="flex gap-2 mt-1">
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/shelf/${c.id}/routes`)}
+                        className="flex-1 text-xs px-2 py-1.5 rounded border border-sky-200 dark:border-sky-800 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950 transition-colors"
+                      >
+                        View verdict
+                      </button>
+                      <button
+                        type="button"
+                        disabled={loadingCampaignId === c.id}
+                        onClick={() => loadCampaign(c)}
+                        className="flex-1 text-xs px-2 py-1.5 rounded border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-50"
+                      >
+                        {loadingCampaignId === c.id ? 'Loading…' : 'Re-run brief'}
+                      </button>
+                    </div>
+                  </div>
                 ))}
-                {existingCampaigns.length === 0 && (
-                  <p className="text-sm text-gray-400 col-span-2 text-center py-4">No campaigns found.</p>
-                )}
               </div>
             )}
           </div>

@@ -20,9 +20,22 @@ async function api(path, { method = 'GET', body, headers } = {}) {
 }
 
 // ------- Campaigns -------
-export async function listCampaigns() {
-  const data = await api('/api/campaigns');
+export async function listCampaigns(opts = {}) {
+  const params = new URLSearchParams()
+  if (opts.mode) params.set('mode', opts.mode)
+  const path = params.toString() ? `/api/campaigns?${params}` : '/api/campaigns'
+  const data = await api(path);
   return Array.isArray(data?.campaigns) ? data.campaigns : (Array.isArray(data) ? data : []);
+}
+
+/** List only past Shelf evaluations (mode === 'EVALUATION') for the History view */
+export async function listEvaluations() {
+  return listCampaigns({ mode: 'EVALUATION' })
+}
+
+/** Fetch the latest persisted Shelf evaluation for a campaign — verdict + research + brief */
+export async function getShelfEvaluation(id) {
+  return await api(`/api/campaigns/${id}/shelf/evaluation`)
 }
 export async function createCampaign(payload) {
   const data = await api('/api/campaigns', { method: 'POST', body: payload });

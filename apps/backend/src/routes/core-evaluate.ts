@@ -104,9 +104,14 @@ function extractPrimaryContent(row: { content?: any; params?: any } | null | und
 /*                   campaigns: list minimal for dashboard                     */
 /* -------------------------------------------------------------------------- */
 
-router.get('/campaigns', async (_req: Request, res: Response, next: NextFunction) => {
+router.get('/campaigns', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    // Optional ?mode=EVALUATION|CREATE filter so the history view can ask for just evaluations
+    const modeFilter = typeof req.query.mode === 'string' ? req.query.mode : undefined
+    const where = modeFilter ? { mode: modeFilter as any } : {}
+
     const rows = await prisma.campaign.findMany({
+      where,
       orderBy: { createdAt: 'desc' },
       select: {
         id: true, clientName: true, title: true, status: true, mode: true,
@@ -115,6 +120,48 @@ router.get('/campaigns', async (_req: Request, res: Response, next: NextFunction
       },
     })
     res.json(rows)
+  } catch (err) { next(err) }
+})
+
+/**
+ * Return the latest Shelf evaluation verdict for a campaign — the JSON the
+ * frontend renderer expects (verdict object + optional research dossier).
+ *
+ * Used by /shelf/history list cards and by ShelfRoutes hydration when the
+ * page is opened directly by URL (no in-memory navigation state).
+ */
+router.get('/campaigns/:id/shelf/evaluation', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = req.params.id
+    const verdictOut = await prisma.output.findFirst({
+      where: { campaignId: id, type: 'shelfEvaluation' },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, content: true, prompt: true, createdAt: true },
+    })
+    if (!verdictOut) return res.status(404).json({ error: 'No shelfEvaluation output found for this campaign' })
+
+    let verdict: unknown = null
+    try { verdict = JSON.parse(verdictOut.content) } catch { verdict = null }
+
+    const researchOut = await prisma.output.findFirst({
+      where: { campaignId: id, type: 'shelfResearch' },
+      orderBy: { createdAt: 'desc' },
+      select: { content: true, createdAt: true },
+    })
+    let research: unknown = null
+    if (researchOut) { try { research = JSON.parse(researchOut.content) } catch { research = null } }
+
+    let brief: unknown = null
+    try { brief = JSON.parse(verdictOut.prompt) } catch { brief = null }
+
+    res.json({
+      ok: true,
+      campaignId: id,
+      verdict,
+      research,
+      brief,
+      evaluatedAt: verdictOut.createdAt,
+    })
   } catch (err) { next(err) }
 })
 

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useSearchParams, useNavigate, useLocation } from 'react-router-dom'
 import { toast } from '../components/ui/toaster.jsx'
 import Button from '../components/Button.jsx'
+import { getShelfEvaluation } from '../lib/campaigns.js'
 
 /* ── Colour maps ────────────────────────────────────────────────── */
 const JOB_BADGE = {
@@ -670,16 +671,37 @@ export default function ShelfRoutes() {
   const mode = searchParams.get('mode') === '2' ? 2 : 1
 
   // Data comes from navigation state (passed by ShelfBrief on submit)
+  // OR from persisted storage when the page is opened directly by URL (history view, refresh)
   const passedResult = location.state?.result
   const [data, setData] = useState(passedResult || null)
   const [loading, setLoading] = useState(!passedResult)
+  const [hydrationError, setHydrationError] = useState(null)
 
-  // If no state passed (e.g., direct URL), show message
+  // If no nav state and we have a campaignId, fetch the persisted Shelf evaluation
   useEffect(() => {
-    if (!passedResult) {
-      setLoading(false)
-    }
-  }, [passedResult])
+    if (passedResult) return  // already have data, no need to hydrate
+    if (!campaignId) { setLoading(false); return }
+
+    let cancelled = false
+    setLoading(true)
+    getShelfEvaluation(campaignId)
+      .then((res) => {
+        if (cancelled) return
+        if (res?.verdict) {
+          // Reshape to the same { verdict, research } envelope the live response uses
+          setData({ verdict: res.verdict, research: res.research, _hydratedAt: res.evaluatedAt })
+        } else {
+          setHydrationError('No saved evaluation found for this campaign.')
+        }
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setHydrationError(err?.message || 'Failed to load saved evaluation.')
+      })
+      .finally(() => { if (!cancelled) setLoading(false) })
+
+    return () => { cancelled = true }
+  }, [campaignId, passedResult])
 
   const handleSelectRoute = (route) => {
     navigate(`/shelf/${campaignId}/stress-test?routeId=${encodeURIComponent(route.id || route.name)}`, {
@@ -702,9 +724,12 @@ export default function ShelfRoutes() {
   if (!data) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-gray-500 dark:text-gray-400 mb-4">No results found.</p>
-          <Button variant="outline" onClick={() => navigate('/shelf')}>Back to Brief</Button>
+        <div className="text-center max-w-md">
+          <p className="text-gray-500 dark:text-gray-400 mb-2">{hydrationError || 'No results found.'}</p>
+          <div className="flex gap-2 justify-center mt-4">
+            <Button variant="outline" onClick={() => navigate('/shelf')}>Back to Brief</Button>
+            <Button variant="outline" onClick={() => navigate('/shelf/history')}>History</Button>
+          </div>
         </div>
       </div>
     )

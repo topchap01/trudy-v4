@@ -3,6 +3,7 @@ import Dashboard from "./pages/Dashboard.jsx";
 import ShelfBrief from "./pages/ShelfBrief.jsx";
 import ShelfRoutes from "./pages/ShelfRoutes.jsx";
 import ShelfStressTest from "./pages/ShelfStressTest.jsx";
+import ShelfHistory from "./pages/ShelfHistory.jsx";
 import TopNav from "./components/TopNav.jsx";
 import { Toaster } from "./components/ui/toaster.jsx";
 import CommandPalette from "./components/CommandPalette.jsx";
@@ -15,6 +16,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/shelf" replace />} />
           <Route path="/shelf" element={<ShelfBrief />} />
+          <Route path="/shelf/history" element={<ShelfHistory />} />
           <Route path="/shelf/:campaignId/routes" element={<ShelfRoutes />} />
           <Route path="/shelf/:campaignId/stress-test" element={<ShelfStressTest />} />
           <Route path="/dashboard" element={<Dashboard />} />
