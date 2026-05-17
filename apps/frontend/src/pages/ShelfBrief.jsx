@@ -445,7 +445,7 @@ export default function ShelfBrief() {
                     <div className="flex gap-2 mt-1">
                       <button
                         type="button"
-                        onClick={() => navigate(`/shelf/${c.id}/routes`)}
+                        onClick={() => navigate(`/shelf/${c.id}/routes?mode=2`)}
                         className="flex-1 text-xs px-2 py-1.5 rounded border border-sky-200 dark:border-sky-800 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950 transition-colors"
                       >
                         View verdict

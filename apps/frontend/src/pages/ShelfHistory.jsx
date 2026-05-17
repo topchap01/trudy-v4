@@ -94,7 +94,7 @@ function EvaluationCard({ campaign }) {
         <div className="text-xs text-gray-400 dark:text-gray-500">
           {altCount > 0 && <span>{altCount} alternative route{altCount === 1 ? '' : 's'}</span>}
         </div>
-        <Button size="sm" variant="outline" onClick={() => navigate(`/shelf/${campaign.id}/routes`)}>
+        <Button size="sm" variant="outline" onClick={() => navigate(`/shelf/${campaign.id}/routes?mode=2`)}>
           View evaluation →
         </Button>
       </div>

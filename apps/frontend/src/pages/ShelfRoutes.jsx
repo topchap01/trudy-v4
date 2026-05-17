@@ -668,7 +668,7 @@ export default function ShelfRoutes() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const location = useLocation()
-  const mode = searchParams.get('mode') === '2' ? 2 : 1
+  const urlMode = searchParams.get('mode')
 
   // Data comes from navigation state (passed by ShelfBrief on submit)
   // OR from persisted storage when the page is opened directly by URL (history view, refresh)
@@ -734,6 +734,12 @@ export default function ShelfRoutes() {
       </div>
     )
   }
+
+  // Mode prefers the URL param. If absent (e.g. opened from history or deep-linked
+  // without ?mode), infer from the loaded data shape — a `verdict` field means this
+  // is an evaluation (mode 2), a `routes`/`concepts` array means routes (mode 1).
+  const inferredMode = data.verdict ? 2 : (Array.isArray(data.routes) || Array.isArray(data.concepts)) ? 1 : null
+  const mode = urlMode === '2' ? 2 : urlMode === '1' ? 1 : (inferredMode ?? 1)
 
   /* ── Parse routes for Mode 1 ─────────────────────────── */
   const routes = data.routes || data.concepts || []
