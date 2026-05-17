@@ -4,6 +4,59 @@ Shared handoff log between Claude Code sessions, Cowork sessions, and Mark. **Ne
 
 ---
 
+## 2026-05-17 (late night) — Portal Session 1B shipped: shared-password auth
+
+**Actor:** Claude Code (Opus 4.7, 1M context) — working in `~/Documents/nebula-logger-dashboard`
+
+### Summary
+
+Mark called it: "1B is simple, I only have 2 employees." Skipped NextAuth + Google SSO entirely — overkill for a 2-person staff. Shipped the simplest thing that's still actually secure: shared password + HMAC-signed cookie + Edge middleware gate. 30-day session. Sign-out button in the sidebar.
+
+**Commit:** `2b5abe5` in `nebula-logger-dashboard`.
+
+### What landed
+
+| File | Purpose |
+|---|---|
+| `lib/auth.js` | `isAuthRequired()`, `computeSessionToken()` (Edge-compatible HMAC-SHA256 via crypto.subtle), `isValidSessionCookie()` (constant-time compare) |
+| `app/login/page.js` + `LoginForm.jsx` | Server-rendered wrapper around Suspense-wrapped client form (Next 14 requires this around `useSearchParams`). Password input, error display, redirect to `?next=` after success |
+| `app/api/auth/login/route.js` | POST. Validates password against `PORTAL_PASSWORD` env var, sets `portal_auth` cookie (httpOnly, secure in prod, sameSite=lax, 30-day) |
+| `app/api/auth/logout/route.js` | POST. Clears the cookie |
+| `middleware.js` | Edge middleware. Redirects HTML routes to `/login?next=<path>`, returns JSON `401` on `/api/*` routes for clean client handling. Bypasses: `/login`, `/api/auth/*`, `/api/intel/push` (which has its own bearer auth), and static asset prefixes |
+| `components/Nav.jsx` | Returns null on `/login` (no sidebar for the signed-out view). Sign-out button in sidebar footer |
+| `app/globals.css` | New `.portal-login` + `.portal-logout` styles using existing CSS variables |
+
+### How auth works
+
+- **Cookie value** = HMAC-SHA256(`PORTAL_PASSWORD + ":portal-session-v1"`, `AUTH_SECRET`) as hex
+- **Rotation** — change `AUTH_SECRET` to invalidate every existing session; change `PORTAL_PASSWORD` when a staff member leaves
+- **Dev mode** — if either env var is unset, middleware passes through everything. `next dev` keeps working without needing to remember a password.
+
+### Verified
+
+`npm run build` succeeds with all 17 routes (added: 1 login page + 2 auth API routes). Middleware compiled at 26.8kB.
+
+### Mark's pre-deploy checklist
+
+1. Generate a secret: `openssl rand -base64 32`
+2. Set in Vercel project env vars:
+   - `PORTAL_PASSWORD=<a memorable shared password>`
+   - `AUTH_SECRET=<the random secret from step 1>`
+3. Redeploy. Visit `/` and you'll be bounced to `/login`.
+4. Share the password with your 2 staff.
+
+### What's next
+
+Both 1A and 1B are now in place. The portal foundation is done. Subsequent sessions:
+
+| Session | Scope | Blocking on |
+|---|---|---|
+| **2** | Intel dashboard pages (SEO, Promos, Outcomes, Wine) reading from Vercel KV | Cowork pushing data to KV (needs `INTEL_PUSH_SECRET` set + push step added to each task prompt) |
+| **3** | Trudy port — full Shelf pipeline as Next.js API routes with SSE streaming | Mark setting `ANTHROPIC_API_KEY` + `SERPER_API_KEY` in Vercel env vars |
+| **4** | On-demand competitive research trigger | Session 3 complete |
+
+---
+
 ## 2026-05-17 (late night) — Portal Session 1A shipped: foundation, nav, KV scaffold
 
 **Actor:** Claude Code (Opus 4.7, 1M context) — working in `~/Documents/nebula-logger-dashboard`
