@@ -4,6 +4,98 @@ Shared handoff log between Claude Code sessions, Cowork sessions, and Mark. **Ne
 
 ---
 
+## 2026-05-17 (late evening) — Evaluation history page + Cowork bundle committed
+
+**Actor:** Claude Code (Opus 4.7, 1M context)
+
+### Summary
+
+Closed the "where do my evaluations go?" loop and committed Cowork's earlier-evening work that was sitting uncommitted in the working tree. Trudy now has a `/shelf/history` page listing every past evaluation as a card (verdict badge, brand/category, date, rationale snippet, improved headline, alt-route count, click-through to the full verdict view). `ShelfRoutes` hydrates from storage when opened by direct URL — so the cards are linkable, the History page works end-to-end, and you can refresh any evaluation page without losing it. The previous "Existing Campaigns" picker on ShelfBrief now defaults to EVALUATION mode and separates "View verdict" from "Re-run brief."
+
+### Commits added
+
+| Commit | Actor | What it did |
+|---|---|---|
+| `2fb22d9` | Claude Code | **Evaluation history + ShelfRoutes hydration.** New `GET /api/campaigns?mode=EVALUATION` filter + dedicated `GET /api/campaigns/:id/shelf/evaluation` endpoint that returns the latest `shelfEvaluation` output as the same JSON the renderer consumes from a live evaluate. New `/shelf/history` React page with verdict-badged cards that lazy-load each card's full verdict to show substance (rationale + improved headline). `ShelfRoutes` hydrates from storage when there's no in-memory nav state. `ShelfBrief` picker filters to EVALUATION mode + adds View/Re-run buttons. TopNav gets a History link. |
+| `14ab6ae` | Cowork (committed by Claude Code) | **SEO baseline reader + named Shelf vocabulary + wine taxonomy.** Bundle of Cowork's earlier-evening work that was staged but uncommitted in the working tree. Documented in the 2026-05-17 (evening) entry below. Attributed to Cowork in the commit message; Claude Code committed on its behalf to keep the tree clean. |
+
+### Why the history was invisible before
+
+Three separate gaps stacked up:
+1. `/api/campaigns` listed everything (CREATE + EVALUATION + DRAFT) with no filter
+2. The existing `/api/campaigns/:id/outputs/latest` endpoint only queried the OLD War Room output types (`framingNarrative`, `evaluationNarrative`, etc.) — never `shelfEvaluation`, so even direct API access didn't surface Shelf verdicts
+3. The picker on ShelfBrief looked like a history list but actually re-loaded the brief for re-running — clicking a card replaced the form, never opened the past verdict
+
+The new endpoint + page + hydration close all three.
+
+### Proof point
+
+Mark's evaluation history (as of commit time): **25 past Shelf evaluations** persisted across the session — Guinness x4, Beko x4, plus earlier work. All now reachable at `/shelf/history` with full verdict data including Creative Director output and alternative routes.
+
+### What's now linkable
+
+- `/shelf/history` — list of every past evaluation
+- `/shelf/<campaignId>/routes` — the full verdict view (works as a deep link now; previously only worked with in-memory state)
+- Both via the new "History" link in TopNav, or via the "View verdict" button on each card in the ShelfBrief picker
+
+### Open follow-ups (carried forward)
+
+Unchanged from earlier entries:
+- Shell `ANTHROPIC_API_KEY=""` in `~/.zshrc` — flagged in three logs now, still unfixed by Mark
+- Per-verdict feedback capture for the closed outcome loop
+- Two-mode classifier (Accountant vs Gambler) at brief level
+- Per-alternative headline dedup
+
+New one to consider:
+- The history list currently lazy-loads each card's full verdict on mount (one request per card). Cheap with 25 cards; will need pagination + summary fields if it grows to hundreds. Worth caching the verdict summary (verdict label, headline, alt count) on the Campaign row itself so the list can render in one query.
+
+---
+
+## 2026-05-17 (evening) — Cowork-side fixes: taxonomy alignment, SEO reader, wine landscape, named vocabulary
+
+**Actor:** Cowork (Opus 4.6)
+
+### Summary
+
+Picked up the Claude Code session's open follow-ups and fixed everything reachable from the Cowork side. The three "data → Trudy" arrows on the architecture diagram are now all wired: Promo Monitor (shipped May 16), SF Outcomes (shipped May 16), and SEO Deep Dive (shipped this session). Also hardened the two Cowork data-collection tasks (Promo Monitor, Electrolux Landscape) to output canonical taxonomy strings, eliminating the fuzzy-matching workarounds Trudy-side. Created a new Wine Promotional Landscape monthly task. Wired Mark's named Shelf Truth vocabulary into the evaluation prompts.
+
+### Changes made
+
+| What | Where | Detail |
+|---|---|---|
+| **SEO baseline reader** | `src/lib/seo-context.ts` (new) | Same mtime-cache pattern as market-context.ts and campaign-outcomes.ts. Reads `~/Documents/Claude/Scheduled/weekly-seo-deep-dive/seo-baseline-*.json`. Returns keyword gaps, pillar distribution, refresh candidates, cannibalisation risks, top keywords, competitor domains, indexation stats. |
+| **SEO route + mount** | `src/routes/seo-context.ts` (new), `src/index.ts` | `GET /api/seo-context` endpoint, mounted in the api router. |
+| **SEO → research augmentation** | `src/shelf/research.ts` | `augmentWithSeoContext()` injects up to 6 fact types into `categoryFacts`: keyword gaps, pillar distribution, refresh candidates, cannibalisation risks, relevant page-1 keywords, competitor domains in SERPs. Filters by brand/category relevance where possible. |
+| **Shelf Truth named vocabulary** | `src/shelf/constitution.ts` | Added `<named_vocabulary>` section with 12 canonical terms: Dopamine Sandwich, Insult Threshold, Rule of Three, Slippage, Budget Hacker, Kill Switch, S.O.S. Framework, Catalogue Ready, Two Pilots, Goal Gradient Effect, Currency Bias, 3-Second Equation. Agents now use these terms by name in outputs. |
+| **Serper .env fix** | `apps/backend/.env` | Removed trailing spaces from SERPER_API_KEY and related vars (was causing HTTP 400, research dossier falling back to empty). |
+| **Promo Monitor taxonomy alignment** | Cowork task prompt | Added Step 2b (canonical taxonomy mapping tables for 16 mechanics + 16 categories from taxonomy.json), Step 2c (classifier quality rules fixing false positives: gift card ≠ cashback, discount ≠ cashback, etc.), Step 2d (parsedValue numeric extraction). |
+| **Electrolux Landscape taxonomy alignment** | Cowork task prompt | Rewrote promotion types and product categories sections with canonical taxonomy tables. Updated Step 0 to filter on exact canonical category matches and use parsedValue. |
+| **Wine Promotional Landscape** | New monthly Cowork task | Retailer-first sourcing (Dan Murphy's, BWS, Liquorland, First Choice, Vintage Cellars). Manufacturer sites deliberately excluded from primary sources (wine brands don't run promotable offers on their .com). Adaptive slide count — only slides with substance. Strict "is this actually a promotion?" filter. |
+| **taxonomy.json — wine industry** | `packages/heuristics/taxonomy.json` | Added Australian Vintage (McGuigan, Tempus Two, Nepenthe, Barossa Valley Estate) as client. Added 5 wine competitor groups (Treasury Wine Estates, Accolade Wines, Casella Family Brands, De Bortoli, McWilliam's) with subBrands. Added 5 liquor retailers (Dan Murphy's, BWS, Liquorland, First Choice Liquor, Vintage Cellars). |
+
+### Integration files now in play
+
+| Path | Who writes | Who reads (Trudy code) |
+|---|---|---|
+| `~/Documents/Claude/Scheduled/promo-monitor-fortnightly/baseline_promos.json` | Promo Monitor task | `lib/market-context.ts` |
+| `<repo>/data/sf-campaign-outcomes.json` (gitignored) | SF Outcome Export task | `lib/campaign-outcomes.ts` |
+| `~/Documents/Claude/Scheduled/weekly-seo-deep-dive/seo-baseline-*.json` | SEO Deep Dive task | `lib/seo-context.ts` |
+
+### What an agent now additionally sees (SEO augmentation example)
+
+- *categoryFact*: "SEO keyword gaps with no Trevor content coverage: cashback promotion rules australia, instant win competition examples, …"
+- *categoryFact*: "Current blog content distribution across One Job pillars: Converter: 12, Breaker: 8, Builder: 4, …"
+- *categoryFact*: "Trevor already ranks on page 1 for: 'cashback promotion' (Found on page 1), …"
+
+### Still open
+
+- **Shell `ANTHROPIC_API_KEY=""`** in `~/.zshrc` — flagged in both May 16 and May 17 logs, still unfixed. Mark to unset when convenient.
+- **Outcome loop** — Trudy still doesn't capture Mark's per-verdict scoring for feedback. Next Claude Code session should wire this.
+- **Two-mode classifier** — Accountant vs Gambler split at brief level. Vision doc calls for it; not yet built.
+- **Per-alternative headline dedup** — Creative Director calls don't see sibling routes' headlines, so lenses can echo across SAFE/BOLD/RIDICULOUS spread.
+
+---
+
 ## 2026-05-17 — Structured briefs, Creative Director, verdict reclassification
 
 **Actor:** Claude Code (Opus 4.7, 1M context)
