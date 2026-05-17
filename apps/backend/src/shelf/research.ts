@@ -6,6 +6,7 @@ import { prisma } from '../db/prisma.js'
 import { resolveModel } from '../lib/models.js'
 import { getMarketContext } from '../lib/market-context.js'
 import { getCampaignOutcomes } from '../lib/campaign-outcomes.js'
+import { getSeoContext } from '../lib/seo-context.js'
 
 /* --------------------------------- Types --------------------------------- */
 
@@ -263,11 +264,13 @@ export async function runShelfResearch(params: {
   }
 
   // 2. Always layer in fresh local data (after cache lookup so it doesn't get stale-cached).
-  //    Two independent augmentations:
+  //    Three independent augmentations:
   //      a. Promo Monitor baseline — live AU competitor promos
   //      b. Trevor Salesforce outcomes — past campaign performance with claim rates
+  //      c. SEO Deep Dive baseline — keyword gaps and content health for route generation
   let augmented = augmentWithMarketContext(dossier, { category, mechanic })
   augmented = augmentWithCampaignOutcomes(augmented, { mechanic })
+  augmented = augmentWithSeoContext(augmented, { brand, category })
   return augmented
 }
 
@@ -411,5 +414,119 @@ function augmentWithCampaignOutcomes(
     ...dossier,
     categoryFacts: [summaryFact, ...dossier.categoryFacts],
     mechanicPrecedents: [...precedents, ...dossier.mechanicPrecedents],
+  }
+}
+
+/* ---------- 3. SEO Deep Dive augmentation ---------- */
+
+function augmentWithSeoContext(
+  dossier: ResearchDossier,
+  params: { brand?: string; category?: string }
+): ResearchDossier {
+  const seo = getSeoContext()
+  if (!seo.available) {
+    console.info('[shelf-research] SEO baseline not available — skipping SEO augmentation')
+    return dossier
+  }
+
+  const extraFacts: Array<{ fact: string; source: string }> = []
+  const src = `SEO Deep Dive baseline (${seo.baselineDate ?? 'unknown date'})`
+
+  // 1. Keyword gaps — topics with no Trevor content coverage
+  if (seo.keywordGaps.length > 0) {
+    extraFacts.push({
+      fact: `SEO keyword gaps with no Trevor content coverage: ${seo.keywordGaps.join(', ')}. Route concepts touching these topics may also serve content marketing goals.`,
+      source: src,
+    })
+  }
+
+  // 2. Content pillar distribution — shows where content weight sits
+  const pillarEntries = Object.entries(seo.pillarDistribution)
+  if (pillarEntries.length > 0) {
+    const pillarDesc = pillarEntries
+      .sort(([, a], [, b]) => b - a)
+      .map(([pillar, count]) => `${pillar}: ${count}`)
+      .join(', ')
+    extraFacts.push({
+      fact: `Current blog content distribution across One Job pillars: ${pillarDesc}. Under-represented pillars may benefit from promotional tie-in content.`,
+      source: src,
+    })
+  }
+
+  // 3. Refresh candidates — existing articles needing updates
+  if (seo.refreshCandidates.length > 0) {
+    const relevant = params.category
+      ? seo.refreshCandidates.filter((url) =>
+          url.toLowerCase().includes(params.category!.toLowerCase())
+        )
+      : seo.refreshCandidates
+    if (relevant.length > 0) {
+      extraFacts.push({
+        fact: `Blog articles flagged for content refresh (potential tie-in with new campaign content): ${relevant.slice(0, 5).join(', ')}${relevant.length > 5 ? ` (+${relevant.length - 5} more)` : ''}.`,
+        source: src,
+      })
+    }
+  }
+
+  // 4. Cannibalisation risks — keyword pairs competing with each other
+  if (seo.cannibalisationRisks.length > 0) {
+    const riskDesc = seo.cannibalisationRisks
+      .slice(0, 3)
+      .map((pair) => pair.join(' ↔ '))
+      .join('; ')
+    extraFacts.push({
+      fact: `Content cannibalisation risks (avoid creating content that worsens these): ${riskDesc}.`,
+      source: src,
+    })
+  }
+
+  // 5. Top-performing keywords (page 1) relevant to this brand/category
+  if (seo.topKeywords.length > 0) {
+    const relevant = seo.topKeywords.filter((kw) => {
+      const kwLower = kw.keyword.toLowerCase()
+      const brandMatch = params.brand && kwLower.includes(params.brand.toLowerCase())
+      const catMatch = params.category && kwLower.includes(params.category.toLowerCase())
+      return brandMatch || catMatch
+    })
+    if (relevant.length > 0) {
+      const kwDesc = relevant
+        .slice(0, 5)
+        .map((kw) => `"${kw.keyword}" (${kw.visibility})`)
+        .join(', ')
+      extraFacts.push({
+        fact: `Trevor already ranks on page 1 for: ${kwDesc}. Campaign messaging can reinforce these positions.`,
+        source: src,
+      })
+    }
+  }
+
+  // 6. Competitor domains appearing in SEO results
+  if (seo.competitorDomains.length > 0) {
+    const relevant = params.category
+      ? seo.competitorDomains.filter((cd) =>
+          cd.keyword.toLowerCase().includes(params.category!.toLowerCase())
+        )
+      : seo.competitorDomains.slice(0, 5)
+    if (relevant.length > 0) {
+      const compDesc = relevant
+        .slice(0, 3)
+        .map((cd) => `"${cd.keyword}": ${cd.domains.slice(0, 3).join(', ')}`)
+        .join('; ')
+      extraFacts.push({
+        fact: `Competitor domains appearing in search results: ${compDesc}. Consider differentiation in campaign landing page SEO.`,
+        source: src,
+      })
+    }
+  }
+
+  console.info(
+    `[shelf-research] augmented dossier with ${extraFacts.length} SEO context facts (baseline: ${seo.baselineDate})`
+  )
+
+  if (extraFacts.length === 0) return dossier
+
+  return {
+    ...dossier,
+    categoryFacts: [...dossier.categoryFacts, ...extraFacts],
   }
 }

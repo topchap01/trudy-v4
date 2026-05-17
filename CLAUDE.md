@@ -80,6 +80,9 @@ Trudy does not exist in isolation. A suite of Cowork scheduled tasks generates r
 │  Reads outcome data → grounds scoring in real entry counts,     │
 │  real mechanics used, real timing from Trevor's own campaigns   │
 │                                                                 │
+│  Reads SEO data → keyword gaps, content health, and competitor  │
+│  domains feed into route generation for content alignment       │
+│                                                                 │
 │  Generates routes → Marketing Engine publishes related content  │
 │  Evaluates briefs → outcomes feed back from Salesforce          │
 └─────────────────────────────────────────────────────────────────┘
@@ -89,12 +92,13 @@ Trudy does not exist in isolation. A suite of Cowork scheduled tasks generates r
 
 These files are produced by Cowork tasks and available for Trudy to read:
 
-| File | Location | Updated | Contains |
-|------|----------|---------|----------|
-| Promo baseline | `~/Documents/Claude/Scheduled/promo-monitor-fortnightly/baseline_promos.json` | Fortnightly | All live AU promotions: title, category, promoter, technique, method, value, dates |
-| Electrolux landscape | `~/Documents/Claude/Scheduled/electrolux-promo-landscape/electrolux-landscape-YYYY-MM.json` | Monthly | Whitegoods promos by brand, type, category, value, source |
-| SEO baseline | `~/Documents/Claude/Scheduled/weekly-seo-deep-dive/seo-baseline-YYYY-MM-DD.json` | Weekly | Keyword visibility, content gaps, pillar distribution |
-| **SF campaign outcomes** | **`data/sf-campaign-outcomes.json` (in this repo)** | **Weekly** | **Every Trevor campaign ever run: mechanic, timing, entry count, client, retailer, status. This is Trudy's ground truth for RAG-based evaluation.** |
+| File | Location | Updated | Trudy reader | Contains |
+|------|----------|---------|--------------|----------|
+| Promo baseline | `~/Documents/Claude/Scheduled/promo-monitor-fortnightly/baseline_promos.json` | Fortnightly | `lib/market-context.ts` | All live AU promotions: title, category, promoter, technique, method, value, dates. Canonical taxonomy strings since May 2026. |
+| Electrolux landscape | `~/Documents/Claude/Scheduled/electrolux-promo-landscape/electrolux-landscape-YYYY-MM.json` | Monthly | *(not yet wired)* | Whitegoods promos by brand, type, category, value, source |
+| SEO baseline | `~/Documents/Claude/Scheduled/weekly-seo-deep-dive/seo-baseline-YYYY-MM-DD.json` | Weekly | `lib/seo-context.ts` | Keyword visibility, content gaps, pillar distribution, cannibalisation risks |
+| Wine landscape | `~/Documents/Claude/Scheduled/wine-promo-landscape/wine-landscape-YYYY-MM.pptx` | Monthly | *(not yet wired)* | AU wine/liquor promotions from Dan Murphy's, BWS, Liquorland, First Choice, Vintage Cellars |
+| **SF campaign outcomes** | **`data/sf-campaign-outcomes.json` (in this repo)** | **Weekly** | **`lib/campaign-outcomes.ts`** | **Every Trevor campaign ever run: mechanic, timing, entry count, client, retailer, status. Trudy's ground truth for RAG-based evaluation.** |
 
 ### SF Outcome Data — The RAG Ground Truth
 
@@ -164,15 +168,25 @@ Both Trudy and the Cowork tasks use these canonical classifications. When adding
 **One Job taxonomy** (shared between Trudy IdeaRoutes and blog content pillars):
 - Breaker (Trial), Converter, Builder (Frequency), Loader (Basket), Harvester (Data), Keeper (Loyalty)
 
-### Integration Opportunities (not yet built)
+### Integration Status
 
-1. **Market context in evaluations:** When Trudy evaluates a cashback promotion, it should pull recent cashback promotions from the Promo Monitor baseline to show: "Here are 8 cashback promotions currently live in AU. Average value is $X. Your proposed value is $Y."
+**Shipped (all three data → Trudy arrows):**
 
-2. **Outcome loop via Salesforce:** Trudy generates routes → client runs the promo through Trevor → SF captures Entry_Count__c, redemption rates → outcomes attach to the original IdeaRoute for future RAG retrieval.
+1. **Market context in evaluations** ✅ — `lib/market-context.ts` reads Promo Monitor baseline, fuzzy-matches mechanic/category, injects live AU competitor promos into the research dossier. Agents see "Here are N [mechanic] promotions currently live in AU" with values and promoters.
 
-3. **Content alignment:** Marketing Engine's keyword gaps and pillar analysis could inform which Trudy concepts get blog coverage (e.g., if "instant win promotion mechanics" has no article, the engine should prioritise it).
+2. **SF campaign outcomes in evaluations** ✅ — `lib/campaign-outcomes.ts` reads `data/sf-campaign-outcomes.json`, injects Trevor's own past campaigns as `mechanicPrecedents` with entry counts, prize ladders, cashback tiers, and claim rates.
+
+3. **SEO content alignment** ✅ — `lib/seo-context.ts` reads SEO Deep Dive baseline, injects keyword gaps, pillar distribution, refresh candidates, cannibalisation risks, and competitor domains into `categoryFacts`. Route generation now knows which content gaps exist.
+
+**Not yet built:**
 
 4. **Competitive intelligence in CREATE phase:** Jax (creative agent) should know what competitors are running right now. A brand proposing "cashback on laundry" should see that Samsung already has 3 active cashback promos on laundry — differentiation required.
+
+5. **Outcome feedback loop:** Trudy reasons with Trevor's past campaign data (one-way) but doesn't capture Mark's per-verdict scoring as a feedback signal. Closing this loop would let the system improve as it learns what worked.
+
+6. **Electrolux landscape → Trudy:** Whitegoods-specific competitor data alongside generic Promo Monitor. Reader not yet built.
+
+7. **Wine landscape → Trudy:** Wine/liquor promo data. Task created (monthly), reader not yet built.
 
 ### The Worldview
 

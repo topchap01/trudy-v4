@@ -50,10 +50,11 @@
     "clients": [
       { "name": "Electrolux", "domain": "electrolux.com.au", "categories": ["Laundry", "Refrigeration", "Dishwashers", "Cooking", "Vacuum / Floor Care", "Air Treatment"] },
       { "name": "Westinghouse", "domain": "westinghouse.com.au", "categories": ["Laundry", "Refrigeration", "Dishwashers", "Cooking"] },
-      { "name": "Vinarchy", "domain": null, "categories": ["Wine"] },
+      { "name": "Vinarchy", "domain": "vinarchy.com.au", "categories": ["Wine"] },
+      { "name": "Australian Vintage", "domain": null, "categories": ["Wine"], "subBrands": ["McGuigan", "Tempus Two", "Nepenthe", "Barossa Valley Estate"] },
       { "name": "Boss Coffee", "domain": null, "categories": ["Beverages"] },
       { "name": "Jacob's Creek", "domain": null, "categories": ["Wine"] },
-      { "name": "Grant Burge", "domain": null, "categories": ["Wine"] },
+      { "name": "Grant Burge", "domain": "grantburgewines.com.au", "categories": ["Wine"] },
       { "name": "Croser", "domain": null, "categories": ["Wine"] }
     ],
     "competitors": [
@@ -65,7 +66,12 @@
       { "name": "Haier", "domain": "haier.com/au/", "categories": ["Laundry", "Refrigeration", "Dishwashers", "Cooking", "Air Treatment"] },
       { "name": "Hisense", "domain": "hisense.com.au", "categories": ["Laundry", "Refrigeration", "Air Treatment"] },
       { "name": "Breville", "domain": "breville.com/au/", "categories": ["Small Kitchen Appliances"] },
-      { "name": "Dyson", "domain": "dyson.com.au", "categories": ["Vacuum / Floor Care", "Air Treatment"] }
+      { "name": "Dyson", "domain": "dyson.com.au", "categories": ["Vacuum / Floor Care", "Air Treatment"] },
+      { "name": "Treasury Wine Estates", "domain": "tweglobal.com", "categories": ["Wine"], "subBrands": ["Penfolds", "Wolf Blass", "Lindeman's", "19 Crimes", "Wynns", "Seppelt"] },
+      { "name": "Accolade Wines", "domain": "accoladewines.com", "categories": ["Wine"], "subBrands": ["Hardys", "St Hallett", "Petaluma"] },
+      { "name": "Casella Family Brands", "domain": "casellafamilybrands.com", "categories": ["Wine"], "subBrands": ["Yellow Tail", "Peter Lehmann"] },
+      { "name": "De Bortoli", "domain": "debortoli.com.au", "categories": ["Wine"] },
+      { "name": "McWilliam's", "domain": "mcwilliams.com.au", "categories": ["Wine"] }
     ]
   },
 
@@ -79,7 +85,12 @@
       { "name": "The Good Guys", "type": "electrical", "notes": null },
       { "name": "Bing Lee", "type": "electrical", "notes": null },
       { "name": "Appliances Online", "type": "electrical", "notes": null },
-      { "name": "Myer", "type": "department", "notes": null }
+      { "name": "Myer", "type": "department", "notes": null },
+      { "name": "Dan Murphy's", "type": "liquor", "notes": "Largest AU liquor retailer, strong deals/promo pages" },
+      { "name": "BWS", "type": "liquor", "notes": "Woolworths-owned, convenience liquor" },
+      { "name": "Liquorland", "type": "liquor", "notes": "Coles-owned liquor chain" },
+      { "name": "First Choice Liquor", "type": "liquor", "notes": "Coles-owned, larger format" },
+      { "name": "Vintage Cellars", "type": "liquor", "notes": "Premium positioning, wine events" }
     ],
     "NZ": [
       { "name": "Noel Leeming", "type": "electrical", "notes": null },

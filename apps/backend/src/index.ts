@@ -22,6 +22,7 @@ import synthesisStreamRouter from './routes/synthesis-stream.js'
 import shelfRouter from './routes/shelf.js'
 import marketContextRouter from './routes/market-context.js'
 import campaignOutcomesRouter from './routes/campaign-outcomes.js'
+import seoContextRouter from './routes/seo-context.js'
 
 import opinionRoutes from './routes/opinion.js'
 import judgeRouter from './routes/judge.js'
@@ -68,6 +69,7 @@ api.use(sparkRouter)
 api.use(shelfRouter)
 api.use(marketContextRouter)
 api.use(campaignOutcomesRouter)
+api.use(seoContextRouter)
 
 // Move these INSIDE the same api router so order is deterministic
 api.use(opinionRoutes)

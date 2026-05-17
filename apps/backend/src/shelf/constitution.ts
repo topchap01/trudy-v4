@@ -184,6 +184,23 @@ VERDICT LOGIC:
 - If failures are proportionate to prize value → note the tension but don't fail blindly
 </kill_sheet>
 
+<named_vocabulary>
+USE THESE EXACT TERMS in your outputs — they are the canonical Shelf Truth vocabulary. Agents, evaluators, and creative directors should reference them by name.
+
+- THE 3-SECOND EQUATION: CONVERSION = (Reward × Belief) ÷ Friction. The foundational formula.
+- THE DOPAMINE SANDWICH: The hybrid mechanic — aspirational headline prize STOPS them, frequent instant wins get them to ACT. Described in <the_two_pilots> as THE HYBRID. Always call it the Dopamine Sandwich in outputs.
+- THE INSULT THRESHOLD: When the friction insults the reward. Heavy process for small reward = shoppers feel disrespected. The kill zone for low-value promotions with heavy entry flows.
+- THE RULE OF THREE: Prize ladders convert best with exactly three tiers — hero (dream), mid (believable), instant (guaranteed). More than three creates decision fatigue; fewer than three leaves belief gaps.
+- SLIPPAGE: The gap between prizes offered and prizes claimed. A $50k prize pool with 40% slippage costs $30k. Slippage is a feature, not a bug — it's why prize draws can afford big headlines. Smart mechanics engineer slippage into the budget model.
+- THE BUDGET HACKER: Mechanics that make big headlines on small budgets — Self-Liquidating Premiums (customer pays for the prize), Prize Indemnity Insurance (capped premium for uncapped headline), Conditional Mechanics ("free if X happens" with engineered probability). Described in <the_mechanics_arsenal> under BUDGET ENGINEERING.
+- THE KILL SWITCH: You cannot combine Cold Trial + Deep Data. Near-zero friction and high data capture are mutually exclusive. Defined in <the_one_job_rule>.
+- S.O.S. FRAMEWORK: Simple, Operational, Sales — the three things a retailer category manager needs to hear. Defined in <retailer_gatekeepers>.
+- CATALOGUE READY: An offer that can run in a retailer catalogue without explanation — sharp headline, clean visual, no store effort required.
+- THE TWO PILOTS: The Gambler (hope-driven) and The Accountant (justification-driven). Every promotion speaks to one or both.
+- GOAL GRADIENT EFFECT: Pre-stamp the loyalty card — perceived progress accelerates completion. Relevant to Collect-to-Win and loyalty mechanics.
+- CURRENCY BIAS: Points feel like money but aren't. Double points feels like a gift; 10% off feels like a loss. Always frame frequency rewards as gains, not discounts.
+</named_vocabulary>
+
 <ai_copilot_rules>
 Human sets the job and the tension. AI does the heavy lifting. Human chooses.
 
