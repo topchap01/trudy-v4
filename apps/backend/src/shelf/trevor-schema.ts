@@ -209,7 +209,11 @@ export const EvaluationVerdictSchema = z.object({
     fieldsToAdd: z.array(z.string()),
     rationale: z.string(),
   }),
-  budgetScenarios: z.array(BudgetScenarioSchema),
+  // Budget scenarios were removed — the LLM has no real anchor for media spend,
+  // audience size, or store distribution, so the numbers were precise-looking
+  // fiction. Pragmatist note now carries the narrative cost reasoning instead.
+  // Field kept optional for back-compat with old persisted verdicts.
+  budgetScenarios: z.array(BudgetScenarioSchema).optional(),
   messageHierarchy: z.object({
     current: MessageHierarchySchema.optional(),
     improved: MessageHierarchySchema,

@@ -1,7 +1,7 @@
 // apps/backend/src/shelf/orchestrator.ts
 // Shelf-powered orchestrator — two modes:
 //   1. generateRoutes — "I need ideas" -> 6-8 campaign routes, scored by Provocateur + Pragmatist
-//   2. evaluateIdea  — "I have an idea" -> evaluation verdict with Kill Sheet + budget scenarios
+//   2. evaluateIdea  — "I have an idea" -> evaluation verdict with Kill Sheet, Provocateur, Pragmatist, Creative Director
 
 import { chat, chatFull } from '../lib/openai.js'
 import { resolveModel } from '../lib/models.js'
@@ -163,26 +163,25 @@ async function scoreCreativeDirector(
 
 async function scorePragmatist(
   content: string, briefCtx: string, scope: string,
-): Promise<{ pragmatistScore: number; pragmatistNote: string; budgetScenarios?: BudgetScenario[]; retailerPitch?: RetailerPitch }> {
+): Promise<{ pragmatistScore: number; pragmatistNote: string; retailerPitch?: RetailerPitch }> {
   const raw = await chat({
     model: getModel(),
     system: PRAGMATIST_SYSTEM,
     messages: [{ role: 'user', content: [
       `Evaluate this campaign idea/route for commercial feasibility.`,
       '', briefCtx, '', content, '',
-      `Ground your budget analysis in category-specific redemption norms. Cite the research dossier where relevant.`,
-      `For the S.O.S. pitch, write it as if rehearsing for a category review meeting at Coles or Woolworths. The "sales" line must include actual maths.`,
-      `Respond with JSON: { "pragmatistScore": <1-10>, "pragmatistNote": "<4-6 sentences grounded in operational reality — cite specific cost drivers, category redemption rates, and ops implications>",`,
-      `"budgetScenarios": [{ "redemptionRate": 0.10, "totalCost": <n>, "prizePoolCost": <n>, "verdict": "SAFE"|"WATCH"|"BLOWOUT", "note": "<what drives this scenario — cite category norms>" }, ...for 0.30, 0.60],`,
-      `"retailerPitch": { "simple": "...", "operational": "...", "sales": "<include maths: baseline × expected lift × unit margin>" } }`,
+      `Ground your commercial assessment in real numbers from the research dossier where you have them — Trevor's past campaign performance, category redemption norms, observed competitor activity. Do NOT invent precise dollar figures for total cost / media spend / volume; you don't have the brand's actual budget or store distribution. Discuss cost DRIVERS and proportions (e.g. "at 35% redemption — typical for receipt-upload cashback in this category — claims handling at $8-12 per validation is the real cost driver, not the prize pool itself").`,
+      `For the S.O.S. pitch, write it as if rehearsing for a category review meeting at Coles or Woolworths. The "sales" line must include the maths formula and reasoning, not invented totals.`,
+      `Respond with JSON: { "pragmatistScore": <1-10>, "pragmatistNote": "<4-6 sentences grounded in operational reality — cite specific cost drivers, category redemption rates from the research, and ops implications. Use ranges and proportions, not invented totals>",`,
+      `"retailerPitch": { "simple": "...", "operational": "...", "sales": "<formula + reasoning, e.g. baseline × expected lift × unit margin = incremental margin>" } }`,
     ].join('\n') }],
     json: true, max_output_tokens: 1500,
     meta: { scope: `shelf.${scope}` },
   })
-  const p = safeParseJSON<{ pragmatistScore: number; pragmatistNote: string; budgetScenarios?: BudgetScenario[]; retailerPitch?: RetailerPitch }>(raw, scope)
+  const p = safeParseJSON<{ pragmatistScore: number; pragmatistNote: string; retailerPitch?: RetailerPitch }>(raw, scope)
   return {
     pragmatistScore: clamp(p.pragmatistScore ?? 5), pragmatistNote: p.pragmatistNote ?? '',
-    budgetScenarios: p.budgetScenarios, retailerPitch: p.retailerPitch,
+    retailerPitch: p.retailerPitch,
   }
 }
 
@@ -249,7 +248,6 @@ export async function generateRoutes(input: GenerateRoutesInput): Promise<Campai
       return {
         ...route,
         ...prov, ...prag,
-        budgetScenarios: prag.budgetScenarios ?? route.budgetScenarios,
         retailerPitch: prag.retailerPitch ?? route.retailerPitch,
       }
     }),
@@ -293,7 +291,7 @@ YOUR VOICE:
 YOUR STANDARDS:
 - The evaluation must be constructive. Tearing an idea apart without showing how to fix it is lazy. Every "what breaks" must have a specific, actionable "fix."
 - Weave the research dossier into your analysis. If competitors are doing something similar, say so and explain why this idea needs to be different. If there's a cultural moment, explain how to leverage it.
-- Budget scenarios should be strategic, not arithmetic. Don't just say "60% redemption = $X." Say what drives redemption in this category, what the likely rate is based on mechanic + friction, and what the real cost driver is (claims processing? fulfilment? customer service? fraud?).
+- Commercial commentary belongs in the Pragmatist's prose, not in invented dollar totals. Explain what drives redemption in this category, what the likely rate is based on mechanic + friction, and what the real cost driver is (claims processing? fulfilment? customer service? fraud?) — without fabricating media spend or total campaign cost numbers you don't have grounding for.
 - The Kill Sheet isn't binary pass/fail. Each check should explain the nuance — "friction is high, but justified because the prize value warrants it" or "friction is high AND unjustified because the reward doesn't compensate."
 - The Retailer Readiness section should read like a pitch rehearsal. Would this get through a category review meeting at Coles or Woolworths? What would the buyer's first objection be?
 - Message hierarchy isn't just about trigger words — it's about what the shopper SEES in 3 seconds at the shelf. Paint the scene.
@@ -344,7 +342,7 @@ Examples:
     '',
     'RULE 3 — KILL SHEET: Each check gets a nuanced note that explains the tension, not just pass/fail. "PASS — but only because..." or "FAIL — and this is the one that kills it because..."',
     '',
-    'RULE 4 — BUDGET SCENARIOS: Exactly 3 rows: conservative (low redemption), expected (likely redemption based on category norms), and aggressive (high redemption). Each row MUST include: redemptionRate, estimatedVolume (how many claims), totalCost, costPerUnit, prizePoolCost, operationalCost (validation, fulfilment, customer service), verdict, and a note explaining what drives this scenario and citing category benchmarks.',
+    'RULE 4 — COMMERCIAL COMMENTARY (NOT INVENTED NUMBERS): Do NOT produce a budgetScenarios table. You do not have the brand\'s media spend, audience size, store distribution, or actual budget — any precise totals would be confidently-precise fiction. Instead, let the Pragmatist note carry the commercial reasoning: redemption rate ranges grounded in category norms and the research dossier, cost DRIVERS (claims processing per validation, fulfilment logistics, customer service load) as proportions or per-unit costs, and where the real risk sits (liability cap? ops complexity? regulatory exposure?). Omit the budgetScenarios field entirely.',
     '',
     'RULE 5 — RETAILER READINESS: The "wouldCategoryManagerSayYes" field MUST have a "rationale" explaining WHY — what specifically about this promotion makes it approvable or not. Risks must be specific objections a buyer would raise in a range review meeting.',
     '',
@@ -361,7 +359,6 @@ Examples:
     '  "threeSecondScore": { "reward": <1-10>, "rewardNote": "...", "belief": <1-10>, "beliefNote": "...", "friction": <1-10>, "frictionNote": "...", "conversion": <1-10>, "interpretation": "<narrative reading of all three scores together — what does this combination mean for the shopper?>" },',
     '  "killSheet": { "reward": { "pass": bool, "note": "..." }, "urgency": {...}, "belief": {...}, "speed": {...}, "scan": {...}, "loadTime": {...}, "data": {...}, "ops": {...}, "passCount": <n>, "failCount": <n>, "verdict": "GO"|"REWORK"|"KILL" },',
     '  "frictionAudit": { "currentLevel": "...", "optimalLevel": "...", "fieldsToRemove": [...], "fieldsToAdd": [...], "rationale": "..." },',
-    '  "budgetScenarios": [{ "label": "Conservative|Expected|Aggressive", "redemptionRate": <decimal>, "estimatedVolume": <claims>, "totalCost": <$>, "costPerUnit": <$>, "prizePoolCost": <$>, "operationalCost": <$>, "verdict": "SAFE|WATCH|BLOWOUT", "note": "<cite category norms, explain cost drivers>" }],',
     '  "messageHierarchy": { "current": { "headline": "...", "shelfBreakScore": <1-10> }, "improved": { "headline": "...", "subline": "...", "packCopy": "...", "staffLine": "...", "shelfBreakScore": <1-10> } },',
     '  "retailerReadiness": { "wouldCategoryManagerSayYes": bool, "approvalRationale": "<specific reasons why they would/wouldn\'t approve>", "risks": ["<specific buyer objections>"], "pitch": { "simple": "...", "operational": "...", "sales": "<include actual maths>" } },',
     '  "whatWorks": ["<specific, grounded insights>"],',
@@ -407,13 +404,9 @@ Examples:
   ;(verdict as any).pragmatist = {
     score: prag.pragmatistScore,
     note: prag.pragmatistNote,
-    budgetScenarios: prag.budgetScenarios,
     retailerPitch: prag.retailerPitch,
   }
   ;(verdict as any).creativeDirector = creative
-  // Only backfill budget scenarios if the main evaluation didn't produce them
-  if (prag.budgetScenarios?.length && !verdict.budgetScenarios?.length)
-    verdict.budgetScenarios = prag.budgetScenarios
 
   // Step 4 — Reclassify the verdict if the score signals contradict it.
   // KILL should mean "the concept is fundamentally flawed." If the Provocateur or

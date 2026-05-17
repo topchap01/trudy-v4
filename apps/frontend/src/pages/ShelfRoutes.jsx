@@ -172,7 +172,6 @@ function EvaluationResult({ data }) {
   const verdictRationale = data.verdictRationale || data.verdict_rationale || (typeof data.verdict === 'object' ? data.verdict?.rationale : '') || ''
   const killSheet = data.killSheet || data.kill_sheet || {}
   const threeSecond = data.threeSecondScore || data.three_second_score || data.threeSecondEquation || {}
-  const budgetScenarios = data.budgetScenarios || data.budget_scenarios || []
   const msgObj = data.messageHierarchy || data.message_hierarchy || {}
   const msg = typeof msgObj === 'object' && msgObj.improved ? msgObj.improved : msgObj
   const retailerReadiness = data.retailerReadiness || data.retailer_readiness || data.retailerPitch || {}
@@ -346,66 +345,9 @@ function EvaluationResult({ data }) {
         </Section>
       )}
 
-      {/* Budget Scenarios — with volume, ops cost, and driver notes */}
-      {budgetScenarios.length > 0 && (
-        <Section title="Budget Scenarios">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
-              <thead>
-                <tr className="border-b border-gray-200 dark:border-gray-700">
-                  <th className="py-2 pr-3 font-medium text-gray-500 dark:text-gray-400">Scenario</th>
-                  <th className="py-2 pr-3 font-medium text-gray-500 dark:text-gray-400">Rate</th>
-                  <th className="py-2 pr-3 font-medium text-gray-500 dark:text-gray-400">Volume</th>
-                  <th className="py-2 pr-3 font-medium text-gray-500 dark:text-gray-400">Prize Cost</th>
-                  <th className="py-2 pr-3 font-medium text-gray-500 dark:text-gray-400">Ops Cost</th>
-                  <th className="py-2 pr-3 font-medium text-gray-500 dark:text-gray-400">Total</th>
-                  <th className="py-2 font-medium text-gray-500 dark:text-gray-400">Risk</th>
-                </tr>
-              </thead>
-              <tbody>
-                {budgetScenarios.filter(Boolean).map((s, i) => {
-                  const rate = s.redemptionRate ?? s.redemption ?? ''
-                  const volume = s.estimatedVolume ?? s.volume ?? ''
-                  const prizeCost = s.prizePoolCost ?? s.prize_cost ?? ''
-                  const opsCost = s.operationalCost ?? s.ops_cost ?? ''
-                  const total = s.totalCost ?? s.cost ?? s.total ?? ''
-                  const risk = s.verdict ?? s.risk ?? ''
-                  const riskUpper = String(risk).toUpperCase()
-                  const fmtDollar = (v) => v ? (String(v).startsWith('$') ? v : `$${Number(v).toLocaleString()}`) : '-'
-                  return (
-                    <tr key={i} className="border-b border-gray-100 dark:border-gray-800">
-                      <td className="py-2 pr-3 text-gray-800 dark:text-gray-200 font-medium">{s.label || s.scenario || `Scenario ${i+1}`}</td>
-                      <td className="py-2 pr-3 text-gray-600 dark:text-gray-400">{rate ? `${rate}${String(rate).includes('%') ? '' : '%'}` : '-'}</td>
-                      <td className="py-2 pr-3 text-gray-600 dark:text-gray-400">{volume ? Number(volume).toLocaleString() : '-'}</td>
-                      <td className="py-2 pr-3 text-gray-600 dark:text-gray-400">{fmtDollar(prizeCost)}</td>
-                      <td className="py-2 pr-3 text-gray-600 dark:text-gray-400">{fmtDollar(opsCost)}</td>
-                      <td className="py-2 pr-3 text-gray-800 dark:text-gray-200 font-medium">{fmtDollar(total)}</td>
-                      <td className="py-2">
-                        <Badge className={
-                          riskUpper.includes('SAFE') || riskUpper.includes('LOW') ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
-                          riskUpper.includes('WATCH') || riskUpper.includes('MODERATE') ? 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200' :
-                          riskUpper.includes('BLOWOUT') || riskUpper.includes('HIGH') ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
-                          'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
-                        }>{risk || '-'}</Badge>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-          {/* Scenario driver notes */}
-          {budgetScenarios.some(s => s.note) && (
-            <div className="mt-3 space-y-1">
-              {budgetScenarios.filter(s => s.note).map((s, i) => (
-                <p key={i} className="text-xs text-gray-500 dark:text-gray-400">
-                  <strong>{s.label || `Scenario ${i+1}`}:</strong> {s.note}
-                </p>
-              ))}
-            </div>
-          )}
-        </Section>
-      )}
+      {/* Budget scenarios were removed — they were confidently-precise fiction
+          without grounding in actual media spend, audience size, or store distribution.
+          The Pragmatist's note carries narrative cost reasoning instead. */}
 
       {/* Message Hierarchy — current vs improved */}
       {(msgImproved?.headline || msgCurrent?.headline) && (
