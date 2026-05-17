@@ -4,6 +4,49 @@ Shared handoff log between Claude Code sessions, Cowork sessions, and Mark. **Ne
 
 ---
 
+## 2026-05-17 (night) — Staff portal architecture decided + build spec written
+
+**Actor:** Cowork (Opus 4.6)
+
+### Decision
+
+Mark asked: "How easy would it be to create a portal for staff to see the SEO report, the live nebula logger, campaign reports, and Trudy in action?" After reviewing the Nebula Logger codebase (`~/Documents/nebula-logger-dashboard`) and Trudy's backend, the decision is:
+
+**Merge everything into a single Vercel monorepo.** The Nebula Logger becomes the Trevor Staff Portal — same URL, same deploy, same dark theme. Staff get full access: dashboards AND the ability to trigger Trudy evaluations.
+
+### Architecture
+
+- **Hosting:** Vercel (same as Nebula Logger today)
+- **Data layer:** Vercel KV for intelligence data. Cowork tasks get a push step (curl POST) after writing local JSON. Local files remain for dev, KV for production.
+- **Auth:** NextAuth.js + Google SSO, email allowlist via env var
+- **Staff access:** Full — submit briefs, trigger competitive reports, watch agents evaluate in real time
+- **AI calls:** Streaming SSE from Vercel serverless functions (requires Pro plan for 60s+ timeout)
+
+### Build spec
+
+Written to `PORTAL-BUILD-SPEC.md` in the trudy-v4 repo. Covers:
+- Repo restructure (directory layout for merged app)
+- Vercel KV schema and push endpoint
+- Auth setup (Google SSO + email allowlist)
+- 5 intelligence dashboard pages (SEO, promos, wine, outcomes, competitive)
+- Full Trudy eval pipeline ported to Next.js API routes with streaming
+- 4 Claude Code sessions estimated, ordered by dependency
+- Component reuse plan (BarChart, TrendChart, DonutChart, DataTable extracted from Nebula Logger)
+- Env vars, dependencies, risk notes (serverless timeouts, API costs)
+
+### Also completed this session
+
+- **augmentWithSeoContext()** — wrote the function body in `research.ts` (was called but didn't exist). 6 fact types: keyword gaps, pillar distribution, refresh candidates, cannibalisation risks, page-1 keywords, competitor domains.
+- **Named vocabulary** — added `<named_vocabulary>` section to `constitution.ts` with 12 canonical Shelf Truth terms (Dopamine Sandwich, Insult Threshold, Rule of Three, Slippage, Budget Hacker, etc.)
+- **CLAUDE.md + SESSION-LOG** — updated integration status (3 arrows now ✅), added wine landscape to data table
+- **Mark's .zshrc fix** — guided Mark through removing empty `ANTHROPIC_API_KEY` export (3 session logs had flagged it)
+
+### For Claude Code: next session
+
+Read `PORTAL-BUILD-SPEC.md` before starting. Session 1 (Foundation) is the first target: restructure repo, move Nebula Logger pages, add Vercel KV + push endpoint, add auth, deploy.
+
+---
+
 ## 2026-05-17 (late evening) — Evaluation history page + Cowork bundle committed
 
 **Actor:** Claude Code (Opus 4.7, 1M context)
