@@ -80,6 +80,12 @@ const AMBITION_STYLE = {
   BOLD:       'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200 border-amber-400',
   RIDICULOUS: 'bg-fuchsia-100 text-fuchsia-800 dark:bg-fuchsia-900 dark:text-fuchsia-200 border-fuchsia-400',
 }
+// Left-edge stripe colour per zone — surfaces the SAFE/BOLD/RIDICULOUS spread at a glance
+const AMBITION_STRIPE = {
+  SAFE:       'border-l-4 border-l-slate-400 dark:border-l-slate-500',
+  BOLD:       'border-l-4 border-l-amber-500 dark:border-l-amber-400',
+  RIDICULOUS: 'border-l-4 border-l-fuchsia-500 dark:border-l-fuchsia-400',
+}
 function AmbitionBadge({ zone }) {
   if (!zone) return null
   const cls = AMBITION_STYLE[zone] || AMBITION_STYLE.SAFE
@@ -225,16 +231,21 @@ function EvaluationResult({ data }) {
       {whatBreaks.length > 0 && (
         <Section title="What Breaks">
           <ul className="space-y-3">
-            {whatBreaks.map((item, i) => (
-              <li key={i} className="flex items-start gap-2 text-sm">
-                <span className="text-red-500 mt-0.5 shrink-0">&#10007;</span>
-                <div>
-                  <span className="text-gray-700 dark:text-gray-300">{typeof item === 'string' ? item : item.point || item.text}</span>
-                  {item.shelfRef && <span className="ml-2 text-xs text-gray-400 dark:text-gray-500 italic">Shelf: {item.shelfRef}</span>}
-                  {item.fix && <p className="text-xs text-sky-600 dark:text-sky-400 mt-0.5">Fix: {item.fix}</p>}
-                </div>
-              </li>
-            ))}
+            {whatBreaks.map((item, i) => {
+              // Schema is { issue, shelfReference, fix }. Older outputs used point/text/shelfRef.
+              const issueText = typeof item === 'string' ? item : (item.issue || item.point || item.text || '')
+              const shelfRef = item.shelfReference || item.shelfRef || ''
+              return (
+                <li key={i} className="flex items-start gap-2 text-sm">
+                  <span className="text-red-500 mt-0.5 shrink-0">&#10007;</span>
+                  <div>
+                    {issueText && <span className="text-gray-700 dark:text-gray-300">{issueText}</span>}
+                    {shelfRef && <span className="ml-2 text-xs text-gray-400 dark:text-gray-500 italic">Shelf: {shelfRef}</span>}
+                    {item.fix && <p className="text-xs text-sky-600 dark:text-sky-400 mt-0.5">Fix: {item.fix}</p>}
+                  </div>
+                </li>
+              )
+            })}
           </ul>
         </Section>
       )}
@@ -555,8 +566,9 @@ function EvaluationResult({ data }) {
               const altAngles = Array.isArray(alt.headlineAngles) ? alt.headlineAngles : (Array.isArray(alt.headline_angles) ? alt.headline_angles : [])
               const altSignature = alt.signatureMoment || alt.signature_moment || ''
               const altZone = alt.ambitionZone || alt.ambition_zone || null
+              const stripe = altZone ? (AMBITION_STRIPE[altZone] || '') : ''
               return (
-                <div key={i} className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 overflow-hidden">
+                <div key={i} className={`rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 overflow-hidden ${stripe}`}>
                   <div className="bg-gray-50 dark:bg-gray-800 px-5 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center gap-3">
                       <AmbitionBadge zone={altZone} />
