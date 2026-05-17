@@ -19,8 +19,25 @@ export interface GenerateRoutesInput {
 }
 
 export interface EvaluateIdeaInput {
-  idea: string; brand: string; category: string; market: string
-  retailers: string[]; budget?: number | string; researchDossier?: string
+  brand: string; category: string; market: string
+  retailers: string[]
+  // Free-text supplemental context. Optional — structured fields are primary.
+  idea?: string
+  budget?: number | string
+  researchDossier?: string
+
+  // Structured campaign description. All optional individually but the route
+  // handler enforces a sufficiency rule before reaching this function.
+  mechanic?: string
+  oneJob?: string
+  startDate?: string
+  endDate?: string
+  prizeCount?: number
+  majorPrizeValue?: number
+  totalPrizePool?: number
+  rewardDescription?: string
+  entryRequirement?: string
+  headline?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -52,11 +69,36 @@ function buildBriefXML(input: GenerateRoutesInput | EvaluateIdeaInput): string {
   p.push(`  <category>${escapeXml(input.category)}</category>`)
   p.push(`  <market>${escapeXml(input.market)}</market>`)
   p.push(`  <retailers>${input.retailers.map(escapeXml).join(', ')}</retailers>`)
-  if ('oneJob' in input) p.push(`  <one_job>${escapeXml(String(input.oneJob))}</one_job>`)
-  if ('budget' in input && input.budget) p.push(`  <budget>${escapeXml(String(input.budget))}</budget>`)
+
+  // oneJob — present on GenerateRoutesInput always, on EvaluateIdeaInput when supplied
+  const oneJob = (input as any).oneJob
+  if (oneJob) p.push(`  <one_job>${escapeXml(String(oneJob))}</one_job>`)
+
+  if (input.budget) p.push(`  <budget>${escapeXml(String(input.budget))}</budget>`)
+
+  // GenerateRoutesInput-only fields
   if ('duration' in input) p.push(`  <duration>${escapeXml(String((input as GenerateRoutesInput).duration))}</duration>`)
   if ('constraints' in input && (input as GenerateRoutesInput).constraints)
     p.push(`  <constraints>${escapeXml((input as GenerateRoutesInput).constraints!)}</constraints>`)
+
+  // EvaluateIdeaInput structured campaign fields. Each is rendered only when present
+  // so the agent sees a clean brief and can identify gaps.
+  const e = input as EvaluateIdeaInput
+  if (e.mechanic) p.push(`  <mechanic>${escapeXml(e.mechanic)}</mechanic>`)
+  if (e.headline) p.push(`  <headline>${escapeXml(e.headline)}</headline>`)
+  if (e.rewardDescription) p.push(`  <reward_description>${escapeXml(e.rewardDescription)}</reward_description>`)
+  if (e.entryRequirement) p.push(`  <entry_requirement>${escapeXml(e.entryRequirement)}</entry_requirement>`)
+  if (e.startDate || e.endDate) {
+    p.push(`  <campaign_window start="${escapeXml(e.startDate ?? '')}" end="${escapeXml(e.endDate ?? '')}" />`)
+  }
+  if (e.prizeCount != null || e.majorPrizeValue != null || e.totalPrizePool != null) {
+    const attrs: string[] = []
+    if (e.prizeCount != null) attrs.push(`count="${e.prizeCount}"`)
+    if (e.majorPrizeValue != null) attrs.push(`major_value="${e.majorPrizeValue}"`)
+    if (e.totalPrizePool != null) attrs.push(`total_pool="${e.totalPrizePool}"`)
+    p.push(`  <prizes ${attrs.join(' ')} />`)
+  }
+
   p.push('</brief>')
   if (input.researchDossier) {
     p.push('', '<research_dossier>', input.researchDossier, '</research_dossier>')
@@ -209,6 +251,11 @@ export async function evaluateIdea(input: EvaluateIdeaInput): Promise<Evaluation
 <evaluation_mode>
 You are a senior promotional marketing consultant with 20 years of Australian retail experience delivering a written evaluation. This is not a checklist — it is a strategic consultation.
 
+HOW TO READ THE INPUT:
+- The <brief> block contains STRUCTURED FIELDS — these are your primary source of truth about what the campaign actually is. Read every field present (mechanic, headline, reward_description, entry_requirement, campaign_window, prizes attributes, budget). Cite them by name in your assessment.
+- The <additional_context> block (if present) is OPTIONAL supplemental prose from the brief writer. Use it for colour, intent, or anything the structured fields can't express. Never let it contradict the structured fields — those win.
+- If a structured field is missing, NAME the gap explicitly in your assessment rather than fabricating ("no end date specified — assume 4-week window for modelling, but this needs confirmation"). The reader should know what's evidence vs assumption.
+
 YOUR VOICE:
 - Write like Mark Alexander: direct, commercial, grounded in real shelf behaviour. No marketing buzzwords.
 - Every claim must be grounded in evidence: the research dossier, The Shelf frameworks, or specific category precedent.
@@ -235,9 +282,16 @@ WHAT MAKES AN EVALUATION BRILLIANT:
 - It sounds like advice from a respected colleague, not a scoring rubric
 </evaluation_mode>`
 
+  // Compose the body of the user message. Structured fields in <brief> are
+  // the primary grounding; <idea> is optional supplemental prose. If the user
+  // didn't write any prose, omit the tag entirely rather than send "<idea></idea>".
+  const ideaBlock = input.idea?.trim()
+    ? `<additional_context>\n${escapeXml(input.idea)}\n</additional_context>`
+    : ''
+
   const userMsg = [
     'Evaluate this promotional campaign idea with the depth and insight of a senior consultant. Use the research dossier to ground every observation.',
-    '', `<idea>\n${escapeXml(input.idea)}\n</idea>`, '', briefXML, '',
+    '', briefXML, '', ideaBlock, '',
     '',
     'Respond with a single JSON object. Follow these structural rules PRECISELY:',
     '',
@@ -292,8 +346,11 @@ WHAT MAKES AN EVALUATION BRILLIANT:
   const verdict = safeParseJSON<EvaluationVerdict>(result.text, 'evaluate')
   console.info(`[shelf.evaluate] Verdict: ${verdict.verdict}. Scoring...`)
 
-  // Steps 2+3 — Provocateur + Pragmatist in parallel
-  const ideaContent = `<idea>\n${input.idea}\n</idea>`
+  // Steps 2+3 — Provocateur + Pragmatist in parallel.
+  // Synthesise a one-liner from structured fields when no free-text idea was supplied.
+  const ideaContent = input.idea?.trim()
+    ? `<additional_context>\n${input.idea}\n</additional_context>`
+    : `<campaign_summary>${[input.mechanic, input.rewardDescription, input.headline].filter(Boolean).join(' — ')}</campaign_summary>`
   const [prov, prag] = await Promise.all([
     scoreProvocateur(ideaContent, briefXML, 'provocateur-eval'),
     scorePragmatist(ideaContent, briefXML, 'pragmatist-eval'),
@@ -333,12 +390,15 @@ async function generateAlternatives(input: EvaluateIdeaInput, verdict: Evaluatio
   const briefXML = buildBriefXML(input)
   const works = verdict.whatWorks?.join('\n- ') ?? 'Nothing identified'
   const breaks = verdict.whatBreaks?.map((b) => `${b.issue} (${b.shelfReference})`).join('\n- ') ?? ''
+  const originalBlock = input.idea?.trim()
+    ? `<original_idea>\n${input.idea}\n</original_idea>`
+    : `<original_idea>See structured brief above — ${[input.mechanic, input.rewardDescription, input.headline].filter(Boolean).join(' — ') || 'no prose provided'}</original_idea>`
 
   const raw = await chat({
     model: getModel(), system: SHELF_CONSTITUTION,
     messages: [{ role: 'user', content: [
       `The following idea received a REWORK verdict:`,
-      `<original_idea>\n${input.idea}\n</original_idea>`,
+      originalBlock,
       `<what_works>\n- ${works}\n</what_works>`,
       `<what_breaks>\n- ${breaks}\n</what_breaks>`,
       '', briefXML, '',

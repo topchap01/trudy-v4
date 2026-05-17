@@ -33,7 +33,26 @@ const JOB_SELECTED = {
   amber: 'ring-2 ring-amber-500 bg-amber-100 dark:bg-amber-900',
 }
 
-const MECHANICS = ['Cashback', 'Instant Win', 'GWP', 'Prize Draw', 'Collect-to-Win', 'Other']
+// Aligned with packages/heuristics/taxonomy.json mechanics array
+const MECHANICS = [
+  'Cashback',
+  'Instant Win',
+  'Prize Draw (Single)',
+  'Prize Draw (Multi)',
+  'GWP',
+  'Bundle Deal',
+  'Trade-In',
+  'Extended Warranty',
+  'Finance / Interest-Free',
+  'Percentage Discount',
+  'Competition',
+  'Collect-to-Win',
+  'Conditional',
+  'Unique Code',
+  '1-in-X',
+  'Sweepstake',
+  'Other',
+]
 
 const PROGRESS_MESSAGES = [
   'Researching category...',
@@ -105,6 +124,14 @@ export default function ShelfBrief() {
   const [description, setDescription] = useState('')
   const [mechanic, setMechanic] = useState('')
   const [headline, setHeadline] = useState('')
+  const [evalJob, setEvalJob] = useState('')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+  const [prizeCount, setPrizeCount] = useState('')
+  const [majorPrizeValue, setMajorPrizeValue] = useState('')
+  const [totalPrizePool, setTotalPrizePool] = useState('')
+  const [rewardDescription, setRewardDescription] = useState('')
+  const [entryRequirement, setEntryRequirement] = useState('')
 
   // Existing campaigns
   const [existingCampaigns, setExistingCampaigns] = useState([])
@@ -274,24 +301,37 @@ export default function ShelfBrief() {
   /* Submit Mode 2 */
   const handleEvaluate = async e => {
     e.preventDefault()
-    if (!description.trim() || description.trim().length < 10) {
-      toast.error('Please describe your promotion (at least 10 characters).')
-      return
-    }
     if (!brand.trim()) { toast.error('Brand is required.'); return }
     if (!category.trim()) { toast.error('Category is required.'); return }
+
+    // Sufficiency hint (server enforces the same rule and will return NEEDS_INPUT)
+    const hasRewardSignal = Boolean(rewardDescription.trim()) || majorPrizeValue || totalPrizePool || prizeCount
+    const hasStructuredCore = Boolean(mechanic) && hasRewardSignal
+    const ideaMeaty = description.trim().length >= 80
+    if (!hasStructuredCore && !ideaMeaty) {
+      toast.error('Brief needs a mechanic + reward signal, or a longer free-text description (~80+ chars).')
+      return
+    }
 
     setLoading(true)
     const stopProgress = startProgress()
     try {
       const result = await evaluateIdea({
-        idea: description.trim(),
+        idea: description.trim() || undefined,
         brand: brand.trim(),
         category: category.trim(),
         market: market.trim() || 'Australia',
         retailers: retailers.split(',').map(r => r.trim()).filter(Boolean),
         budget: budget ? Number(budget) : undefined,
         mechanic: mechanic || undefined,
+        oneJob: evalJob || undefined,
+        startDate: startDate || undefined,
+        endDate: endDate || undefined,
+        prizeCount: prizeCount ? Number(prizeCount) : undefined,
+        majorPrizeValue: majorPrizeValue ? Number(majorPrizeValue) : undefined,
+        totalPrizePool: totalPrizePool ? Number(totalPrizePool) : undefined,
+        rewardDescription: rewardDescription.trim() || undefined,
+        entryRequirement: entryRequirement.trim() || undefined,
         headline: headline.trim() || undefined,
       })
       const campaignId = result?.campaignId || result?.id || result?.campaign?.id
@@ -485,70 +525,134 @@ export default function ShelfBrief() {
 
         {/* ── Mode 2 Form ──────────────────────────────────────── */}
         {mode === 2 && !loading && (
-          <form onSubmit={handleEvaluate} className="space-y-6">
-            {/* Description */}
-            <div>
-              <Label htmlFor="description">Describe your promotion *</Label>
+          <form onSubmit={handleEvaluate} className="space-y-8">
+
+            {/* ── Section 1: Brand + market context ─────────────── */}
+            <section className="space-y-4">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Brand &amp; market</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="brand2">Brand *</Label>
+                  <TextInput id="brand2" value={brand} onChange={setBrand} placeholder="e.g. Beko" required />
+                </div>
+                <div>
+                  <Label htmlFor="category2">Category *</Label>
+                  <TextInput id="category2" value={category} onChange={setCategory} placeholder="e.g. Kitchen appliances" required />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="market2">Market</Label>
+                  <TextInput id="market2" value={market} onChange={setMarket} placeholder="Australia" />
+                </div>
+                <div>
+                  <Label htmlFor="retailers2">Retailers</Label>
+                  <TextInput id="retailers2" value={retailers} onChange={setRetailers} placeholder="Harvey Norman, The Good Guys, JB Hi-Fi" />
+                </div>
+              </div>
+            </section>
+
+            {/* ── Section 2: Campaign structure ─────────────────── */}
+            <section className="space-y-4">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Campaign structure</h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400 -mt-2">
+                Trudy needs at minimum a <strong>mechanic</strong> plus a <strong>reward signal</strong> (description, prize value, prize count, or pool) to produce a real evaluation. The richer the brief, the sharper the verdict.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="mechanic">Mechanic</Label>
+                  <select
+                    id="mechanic"
+                    value={mechanic}
+                    onChange={e => setMechanic(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition-colors"
+                  >
+                    <option value="">Select mechanic...</option>
+                    {MECHANICS.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <Label htmlFor="evalJob">Job (what should the promo do?)</Label>
+                  <select
+                    id="evalJob"
+                    value={evalJob}
+                    onChange={e => setEvalJob(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition-colors"
+                  >
+                    <option value="">Select job...</option>
+                    {JOBS.map(j => <option key={j.id} value={j.id}>{j.label} — {j.desc}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="startDate">Start date</Label>
+                  <TextInput id="startDate" type="date" value={startDate} onChange={setStartDate} />
+                </div>
+                <div>
+                  <Label htmlFor="endDate">End date</Label>
+                  <TextInput id="endDate" type="date" value={endDate} onChange={setEndDate} />
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="rewardDescription">Reward — short description</Label>
+                <TextInput id="rewardDescription" value={rewardDescription} onChange={setRewardDescription} placeholder="e.g. Tiered cashback up to $1,000 on bundles over $5,000" />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <Label htmlFor="prizeCount">Number of prizes</Label>
+                  <TextInput id="prizeCount" type="number" min="0" value={prizeCount} onChange={setPrizeCount} placeholder="e.g. 50" />
+                </div>
+                <div>
+                  <Label htmlFor="majorPrizeValue">Major prize value (AUD)</Label>
+                  <TextInput id="majorPrizeValue" type="number" min="0" value={majorPrizeValue} onChange={setMajorPrizeValue} placeholder="e.g. 10000" />
+                </div>
+                <div>
+                  <Label htmlFor="totalPrizePool">Total prize pool (AUD)</Label>
+                  <TextInput id="totalPrizePool" type="number" min="0" value={totalPrizePool} onChange={setTotalPrizePool} placeholder="e.g. 50000" />
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="entryRequirement">Entry requirement — what does the shopper have to do?</Label>
+                <TextArea
+                  id="entryRequirement"
+                  value={entryRequirement}
+                  onChange={setEntryRequirement}
+                  placeholder="e.g. Buy 2+ Beko appliances in a single transaction, upload receipt at bekobundle.com.au within 30 days"
+                  rows={2}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="headline">Headline — what is on the pack?</Label>
+                <TextInput id="headline" value={headline} onChange={setHeadline} placeholder="e.g. Win up to $1,000 cashback when you bundle 2+ appliances" />
+              </div>
+
+              <div>
+                <Label htmlFor="budget2">Working budget (AUD)</Label>
+                <TextInput id="budget2" type="number" min="0" value={budget} onChange={setBudget} placeholder="Optional — total media + prize + ops budget" />
+              </div>
+            </section>
+
+            {/* ── Section 3: Additional context (free-text) ───── */}
+            <section className="space-y-2">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Additional context (optional)</h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Anything the structured fields can't capture — client objectives, strategic intent, retailer history, prior campaign learnings, creative thinking, constraints. Becomes <code className="text-[10px] bg-gray-100 dark:bg-gray-800 px-1 rounded">&lt;additional_context&gt;</code> in the brief.
+              </p>
               <TextArea
                 id="description"
                 value={description}
                 onChange={setDescription}
-                placeholder="Tell Trudy everything — the mechanic, the prize, the message, what the shopper sees on shelf..."
-                required
-                rows={5}
-                minLength={10}
+                placeholder="Optional — anything else worth Trudy knowing about the campaign, the client, or the moment..."
+                rows={4}
               />
-            </div>
-
-            {/* Brand + Category */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="brand2">Brand *</Label>
-                <TextInput id="brand2" value={brand} onChange={setBrand} placeholder="e.g. Cadbury" required />
-              </div>
-              <div>
-                <Label htmlFor="category2">Category *</Label>
-                <TextInput id="category2" value={category} onChange={setCategory} placeholder="e.g. Chocolate confectionery" required />
-              </div>
-            </div>
-
-            {/* Market + Retailers */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="market2">Market</Label>
-                <TextInput id="market2" value={market} onChange={setMarket} placeholder="Australia" />
-              </div>
-              <div>
-                <Label htmlFor="retailers2">Retailers</Label>
-                <TextInput id="retailers2" value={retailers} onChange={setRetailers} placeholder="Woolworths, Coles, Chemist Warehouse" />
-              </div>
-            </div>
-
-            {/* Budget + Mechanic */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="budget2">Budget (AUD)</Label>
-                <TextInput id="budget2" type="number" min="0" value={budget} onChange={setBudget} placeholder="Optional" />
-              </div>
-              <div>
-                <Label htmlFor="mechanic">Mechanic</Label>
-                <select
-                  id="mechanic"
-                  value={mechanic}
-                  onChange={e => setMechanic(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition-colors"
-                >
-                  <option value="">Select mechanic...</option>
-                  {MECHANICS.map(m => <option key={m} value={m}>{m}</option>)}
-                </select>
-              </div>
-            </div>
-
-            {/* Headline */}
-            <div>
-              <Label htmlFor="headline">Headline — what is on the pack?</Label>
-              <TextInput id="headline" value={headline} onChange={setHeadline} placeholder="e.g. Win a trip to Paris" />
-            </div>
+            </section>
 
             <div className="pt-2">
               <Button type="submit" size="lg" className="w-full sm:w-auto bg-amber-600 border-amber-600 hover:bg-amber-700 dark:bg-amber-500 dark:hover:bg-amber-600 focus:ring-amber-500">

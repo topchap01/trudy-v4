@@ -26,15 +26,65 @@ const BriefInput = z.object({
 })
 
 const IdeaInput = z.object({
-  idea: z.string().min(10), // free text or structured description
+  // Brand + category remain the only hard requirements.
   brand: z.string().min(1),
   category: z.string().min(1),
   market: z.string().default('Australia'),
   retailers: z.array(z.string()).optional(),
   budget: z.number().optional(),
-  mechanic: z.string().optional(), // if they know the mechanic
-  headline: z.string().optional(), // on-pack message if they have one
+
+  // Structured campaign description — preferred input shape. Each field maps
+  // to a typed <brief> XML node consumed by the Provocateur and Pragmatist.
+  mechanic: z.string().optional(),
+  oneJob: z.enum(['BREAKER', 'CONVERTER', 'BUILDER', 'LOADER', 'HARVESTER', 'KEEPER']).optional(),
+  startDate: z.string().optional(), // YYYY-MM-DD
+  endDate: z.string().optional(),   // YYYY-MM-DD
+  prizeCount: z.number().int().nonnegative().optional(),
+  majorPrizeValue: z.number().nonnegative().optional(),
+  totalPrizePool: z.number().nonnegative().optional(),
+  rewardDescription: z.string().optional(), // e.g. "Tiered cashback up to $1,000"
+  entryRequirement: z.string().optional(),  // e.g. "Buy 2+ Beko appliances, upload receipt"
+  headline: z.string().optional(),          // on-pack message
+
+  // Free-text supplemental context. Optional — structured fields are primary.
+  idea: z.string().optional(),
 })
+
+/**
+ * Decide whether a brief carries enough structural signal to merit an LLM
+ * evaluation. Returns a list of missing critical fields when not.
+ *
+ * Sufficiency rule:
+ *   - mechanic is specified, AND at least one reward signal
+ *     (rewardDescription || majorPrizeValue || totalPrizePool || prizeCount)
+ *   OR
+ *   - free-text idea is meaty enough (>= 80 chars) to extract structure from
+ */
+function checkBriefSufficiency(input: z.infer<typeof IdeaInput>): { sufficient: true } | { sufficient: false; missing: string[]; guidance: string } {
+  const hasRewardSignal =
+    Boolean(input.rewardDescription) ||
+    input.majorPrizeValue != null ||
+    input.totalPrizePool != null ||
+    (input.prizeCount != null && input.prizeCount > 0)
+  const hasStructuredCore = Boolean(input.mechanic) && hasRewardSignal
+  const ideaMeaty = (input.idea?.trim().length ?? 0) >= 80
+
+  if (hasStructuredCore || ideaMeaty) return { sufficient: true }
+
+  const missing: string[] = []
+  if (!input.mechanic) missing.push('mechanic')
+  if (!hasRewardSignal) missing.push('reward (description, prize value, prize count, or pool)')
+  if (!input.startDate || !input.endDate) missing.push('campaign window (start + end dates)')
+  if (!input.headline) missing.push('headline / on-pack message')
+  if (!input.entryRequirement) missing.push('entry requirement (what the consumer has to do)')
+
+  return {
+    sufficient: false,
+    missing,
+    guidance:
+      'A real evaluation needs at minimum a mechanic + a reward signal. Either fill in the structured fields, or write a longer free-text description (~80+ chars) so the agents can extract the campaign structure.',
+  }
+}
 
 // ---- Mode 1: Generate Routes ----
 // POST /shelf/generate
@@ -115,6 +165,22 @@ router.post('/shelf/evaluate', async (req: Request, res: Response, next: NextFun
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() })
     const input = parsed.data
 
+    // Step 0: Sufficiency gate. Don't burn an LLM round-trip on a non-brief —
+    // return a NEEDS_INPUT verdict the frontend can render as guidance.
+    const sufficiency = checkBriefSufficiency(input)
+    if (!sufficiency.sufficient) {
+      return res.json({
+        ok: true,
+        verdict: {
+          verdict: 'NEEDS_INPUT',
+          verdictRationale:
+            'The brief is missing the structural detail needed for a useful evaluation. Below is what would unlock a full assessment.',
+          missing: sufficiency.missing,
+          guidance: sufficiency.guidance,
+        },
+      })
+    }
+
     // Step 1: Research
     const research = await runShelfResearch({
       brand: input.brand,
@@ -132,6 +198,16 @@ router.post('/shelf/evaluate', async (req: Request, res: Response, next: NextFun
       market: input.market || 'Australia',
       retailers: input.retailers || [],
       budget: input.budget,
+      mechanic: input.mechanic,
+      oneJob: input.oneJob,
+      startDate: input.startDate,
+      endDate: input.endDate,
+      prizeCount: input.prizeCount,
+      majorPrizeValue: input.majorPrizeValue,
+      totalPrizePool: input.totalPrizePool,
+      rewardDescription: input.rewardDescription,
+      entryRequirement: input.entryRequirement,
+      headline: input.headline,
       researchDossier: research ? JSON.stringify(research) : undefined,
     })
 
@@ -151,7 +227,7 @@ router.post('/shelf/evaluate', async (req: Request, res: Response, next: NextFun
       data: {
         campaignId: campaign.id,
         type: 'shelfEvaluation',
-        prompt: input.idea,
+        prompt: JSON.stringify(input),
         content: JSON.stringify(verdict),
       },
     })
