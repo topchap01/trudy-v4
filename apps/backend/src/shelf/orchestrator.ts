@@ -308,6 +308,20 @@ WHAT MAKES AN EVALUATION BRILLIANT:
 - It connects the category research to the mechanic design ("in liquor, the Friday 5:30pm moment is when decisions are made — your 4-week campaign window means 4 decision points, not 28")
 - It respects the ambition while improving the engineering ("the Trip to Dublin is the right Gambler hook — but 1 prize in a 4-week campaign at 2 retailers is a belief killer. The fix is 3 trips drawn weekly, which triples belief at the same total cost")
 - It sounds like advice from a respected colleague, not a scoring rubric
+
+VERDICT TAXONOMY — read this carefully:
+- GO     — Ship it. Strong across all lenses, compliance clear, execution sound.
+- REWORK — The concept has merit but specific execution choices are wrong. Issue alternative routes that fix the execution while preserving what works. USE REWORK GENEROUSLY — it's the most useful verdict because it forces creative reconstruction.
+- KILL   — The CONCEPT itself is fundamentally broken. Not "the brief is incomplete" — that's a brief problem, not an idea problem. Not "the execution has compliance risks" — those usually fix-able with a different mechanic, which is REWORK. Reserve KILL for ideas that are bad at the strategic core (wrong job, no audience, off-brand to the point of damage, mechanic that can never work in this category, etc.)
+
+If the Provocateur scored the concept ≥7 OR the Creative Director scored it ≥7, the concept HAS creative merit by definition. In that case the only honest verdicts are GO or REWORK — KILL is wrong. The system will downgrade KILL → REWORK automatically when these score signals contradict the verdict, but you should still pick REWORK upfront.
+
+Examples:
+- "Cashback structure has uncapped liability" → REWORK (cap the liability)
+- "Mechanic requires staff training during peak season" → REWORK (use self-serve QR instead)
+- "Racehorse equity creates AUSTRAC exposure" → REWORK (keep racehorse as mascot, drop the equity, use a regulated betting partner)
+- "Brand wants premium positioning but mechanic positions them as discount" → KILL (the concept misreads the brand)
+- "Targeting BUILDER job in a category nobody returns to" → KILL (the job is wrong for the category)
 </evaluation_mode>`
 
   // Compose the body of the user message. Structured fields in <brief> are
@@ -401,22 +415,85 @@ WHAT MAKES AN EVALUATION BRILLIANT:
   if (prag.budgetScenarios?.length && !verdict.budgetScenarios?.length)
     verdict.budgetScenarios = prag.budgetScenarios
 
-  // Step 4 — If REWORK, generate 3 alternative routes
-  if (verdict.verdict === 'REWORK') {
-    console.info('[shelf.evaluate] REWORK — generating 3 alternatives')
-    try { verdict.alternativeRoutes = await generateAlternatives(input, verdict) }
-    catch (err: any) { console.error('[shelf.evaluate] Alternatives failed:', err?.message) }
+  // Step 4 — Reclassify the verdict if the score signals contradict it.
+  // KILL should mean "the concept is fundamentally flawed." If the Provocateur or
+  // Creative Director scored ≥7, the concept clearly has merit — what's wrong is
+  // execution. Downgrade to REWORK so the user gets alternative routes that route
+  // around the Pragmatist's blockers instead of just walking away.
+  const originalVerdict = verdict.verdict
+  const reclassification = reclassifyVerdict({
+    llmVerdict: originalVerdict,
+    provocateurScore: prov.provocateurScore,
+    creativeScore: creative.score,
+    pragmatistScore: prag.pragmatistScore,
+  })
+  if (reclassification.changed) {
+    verdict.verdict = reclassification.newVerdict
+    ;(verdict as any).reclassification = {
+      from: originalVerdict,
+      to: reclassification.newVerdict,
+      rationale: reclassification.rationale,
+    }
+    console.info(`[shelf.evaluate] Reclassified ${originalVerdict} → ${reclassification.newVerdict}: ${reclassification.rationale}`)
+  }
+
+  // Step 5 — Generate alternatives on REWORK *and* KILL. KILL alternatives are
+  // framed differently: "preserve what the concept gets right, route around what
+  // the Pragmatist says kills it." On REWORK they keep the original idea's bones.
+  if (verdict.verdict === 'REWORK' || verdict.verdict === 'KILL') {
+    console.info(`[shelf.evaluate] ${verdict.verdict} — generating 3 alternatives`)
+    try {
+      verdict.alternativeRoutes = await generateAlternatives(input, verdict, verdict.verdict, prag.pragmatistNote)
+    } catch (err: any) {
+      console.error('[shelf.evaluate] Alternatives failed:', err?.message)
+    }
   }
 
   console.info(`[shelf.evaluate] Complete. Verdict: ${verdict.verdict}`)
   return verdict
 }
 
+/**
+ * Reclassify the LLM's verdict when the score signals disagree with it.
+ *
+ * Rule: KILL means "the concept is fundamentally flawed." If the Provocateur
+ * scored ≥7 OR the Creative Director scored ≥7, the concept has clear merit
+ * and what's wrong is execution. Downgrade to REWORK and let the alternatives
+ * generator do its job.
+ *
+ * We don't reclassify REWORK or GO upward — only KILL gets the downgrade
+ * check, because the asymmetric cost is high: a wrongly-issued KILL gives the
+ * user no creative path forward.
+ */
+function reclassifyVerdict(params: {
+  llmVerdict: 'GO' | 'REWORK' | 'KILL'
+  provocateurScore: number
+  creativeScore: number
+  pragmatistScore: number
+}): { changed: false } | { changed: true; newVerdict: 'REWORK'; rationale: string } {
+  if (params.llmVerdict !== 'KILL') return { changed: false }
+  const conceptHasMerit = params.provocateurScore >= 7 || params.creativeScore >= 7
+  if (!conceptHasMerit) return { changed: false }
+  const reasons: string[] = []
+  if (params.provocateurScore >= 7) reasons.push(`Provocateur ${params.provocateurScore}/10`)
+  if (params.creativeScore >= 7) reasons.push(`Creative Director ${params.creativeScore}/10`)
+  return {
+    changed: true,
+    newVerdict: 'REWORK',
+    rationale: `Downgraded from KILL to REWORK — concept has demonstrated merit (${reasons.join(', ')}) but the Pragmatist (${params.pragmatistScore}/10) identified execution blockers. Alternative routes below route around those blockers while preserving what works.`,
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Generate alternatives (REWORK verdicts only)
 // ---------------------------------------------------------------------------
 
-async function generateAlternatives(input: EvaluateIdeaInput, verdict: EvaluationVerdict): Promise<CampaignRoute[]> {
+async function generateAlternatives(
+  input: EvaluateIdeaInput,
+  verdict: EvaluationVerdict,
+  verdictType: 'REWORK' | 'KILL' = 'REWORK',
+  pragmatistBlockers?: string,
+): Promise<CampaignRoute[]> {
   const briefXML = buildBriefXML(input)
   const works = verdict.whatWorks?.join('\n- ') ?? 'Nothing identified'
   const breaks = verdict.whatBreaks?.map((b) => `${b.issue} (${b.shelfReference})`).join('\n- ') ?? ''
@@ -424,27 +501,40 @@ async function generateAlternatives(input: EvaluateIdeaInput, verdict: Evaluatio
     ? `<original_idea>\n${input.idea}\n</original_idea>`
     : `<original_idea>See structured brief above — ${[input.mechanic, input.rewardDescription, input.headline].filter(Boolean).join(' — ') || 'no prose provided'}</original_idea>`
 
+  // Verdict-specific framing. KILL alternatives must route AROUND the blockers,
+  // not just iterate on the original mechanic.
+  const framingLines = verdictType === 'KILL'
+    ? [
+        `The following idea received a KILL verdict — but the concept showed creative merit (Provocateur or Creative Director scored ≥7). The Pragmatist's blockers are what kill it:`,
+        pragmatistBlockers ? `<pragmatist_blockers>\n${pragmatistBlockers}\n</pragmatist_blockers>` : '',
+        '',
+        'Generate exactly 3 alternative routes that PRESERVE WHAT WORKS but ROUTE AROUND the Pragmatist\'s blockers. The goal is to keep the cultural/creative concept intact — the brand world, the story, the emotional payoff — while using a different mechanic, fulfilment model, or commercial structure that the Pragmatist would approve.',
+      ]
+    : [
+        `The following idea received a REWORK verdict:`,
+        '',
+        'Generate exactly 3 alternative routes that KEEP what works but FIX what breaks.',
+      ]
+
   const raw = await chat({
     model: getModel(), system: SHELF_CONSTITUTION,
     messages: [{ role: 'user', content: [
-      `The following idea received a REWORK verdict:`,
+      ...framingLines,
       originalBlock,
       `<what_works>\n- ${works}\n</what_works>`,
       `<what_breaks>\n- ${breaks}\n</what_breaks>`,
       '', briefXML, '',
-      'Generate exactly 3 alternative routes that KEEP what works but FIX what breaks.',
-      '',
       'CRITICAL — each route must occupy a distinct ambition zone:',
       '  Route 1 (ambitionZone: "SAFE")        — a proven category mechanic with disciplined execution. Low risk, predictable outcomes. A category manager will say yes in 10 seconds.',
       '  Route 2 (ambitionZone: "BOLD")        — twists a convention. Adds a cultural moment, a partnership, a content layer, or a new dimension the category isn\'t doing. A category manager will say yes after asking a question.',
       '  Route 3 (ambitionZone: "RIDICULOUS")  — would make a Coles category manager raise an eyebrow before they say yes. Genuinely surprising. May involve a partnership, a content franchise, an unusual fulfilment mechanism, or a flipped category convention. The Pragmatist might score this lower but the Provocateur will love it. The brand team can then decide if they\'re brave enough.',
       '',
       'Each route uses a different mechanic AND occupies its assigned ambition zone. Do not produce three SAFE routes dressed up.',
-      'For each route, include an "ambitionZone" field with the assigned value.',
+      'Every route MUST include a "name" field (a short memorable label) and an "ambitionZone" field with the assigned value.',
       'Respond with a JSON array. No markdown, no prose.',
-    ].join('\n') }],
+    ].filter(Boolean).join('\n') }],
     json: true, max_output_tokens: 10000,
-    meta: { scope: 'shelf.alternatives' },
+    meta: { scope: `shelf.alternatives-${verdictType.toLowerCase()}` },
   })
 
   const alts = safeParseJSON<CampaignRoute[]>(raw, 'alternatives')

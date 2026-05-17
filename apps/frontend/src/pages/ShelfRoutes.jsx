@@ -182,6 +182,8 @@ function EvaluationResult({ data }) {
   const oneJob = data.oneJob || data.one_job || ''
   const oneJobIssue = data.oneJobIssue || data.one_job_issue || ''
   const frictionAudit = data.frictionAudit || data.friction_audit || null
+  // Reclassification — when the score signals contradicted a KILL verdict
+  const reclassification = data.reclassification || null
   // Provocateur, Pragmatist, Creative Director as separate voices
   const provocateur = data.provocateur || {}
   const pragmatist = data.pragmatist || {}
@@ -204,6 +206,15 @@ function EvaluationResult({ data }) {
           <p className="mt-4 text-gray-600 dark:text-gray-400 max-w-2xl mx-auto leading-relaxed">
             {verdictRationale}
           </p>
+        )}
+        {reclassification && (
+          <div className="mt-4 mx-auto max-w-2xl rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950 px-4 py-3 text-left">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">Reclassified</span>
+              <span className="text-xs text-amber-700 dark:text-amber-300">{reclassification.from} → {reclassification.to}</span>
+            </div>
+            <p className="text-sm text-amber-900 dark:text-amber-100 leading-relaxed">{reclassification.rationale}</p>
+          </div>
         )}
         {oneJob && (
           <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
@@ -557,10 +568,14 @@ function EvaluationResult({ data }) {
         </Section>
       )}
 
-      {/* Alternative Routes (if REWORK) — full strategic options across SAFE / BOLD / RIDICULOUS ambition zones */}
-      {verdictStr === 'REWORK' && alternativeRoutes.length > 0 && (
+      {/* Alternative Routes — generated on REWORK and KILL alike */}
+      {alternativeRoutes.length > 0 && (
         <Section title="Alternative Routes">
-          <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">Three routes across the ambition spectrum — each keeps what works, fixes what breaks, and proposes its own creative range.</p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">
+            {verdictStr === 'KILL'
+              ? 'Three routes that preserve the concept\'s creative merit while routing around the blockers the Pragmatist flagged. Each occupies a distinct ambition zone.'
+              : 'Three routes across the ambition spectrum — each keeps what works, fixes what breaks, and proposes its own creative range.'}
+          </p>
           <div className="space-y-6">
             {alternativeRoutes.map((alt, i) => {
               const altAngles = Array.isArray(alt.headlineAngles) ? alt.headlineAngles : (Array.isArray(alt.headline_angles) ? alt.headline_angles : [])
