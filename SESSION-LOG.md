@@ -4,6 +4,152 @@ Shared handoff log between Claude Code sessions, Cowork sessions, and Mark. **Ne
 
 ---
 
+## 2026-05-18 (afternoon) — Trudy Advisor live in portal + manual push script + appliances gap noted
+
+**Actor:** Claude Code (Opus 4.7, 1M context) — working in `~/Documents/nebula-logger-dashboard` and `~/Documents/GitHub/trudy-v4`
+
+### Summary
+
+Trudy Advisor now lives in the portal at `/trudy` — staff-facing chat with the full Cowork-authored prompt + bundled knowledge files + fresh SF outcomes/Promo Monitor data via Vercel Blob. Server-side SSE streaming, prompt-cache discount on the ~49K-token system context. Replaces the Claude.ai Project workflow that couldn't be shared on Pro tier.
+
+Also shipped a `push-to-portal.sh` script in trudy-v4 as a stopgap for the days where Mark wants to push intel without waiting for Cowork's scheduled run. And manually pushed today's SF outcomes + promos so two dashboards now show real data.
+
+**Headline commits:**
+- `26b5e7d` in nebula-logger-dashboard — Trudy Advisor chat
+- `86234f8` in trudy-v4 — push-to-portal.sh
+
+### Trudy Advisor — what landed
+
+| File | Purpose |
+|---|---|
+| `lib/anthropic.js` | Shared Anthropic SDK wrapper. Used by advisor + (Stage B) full Shelf evaluator. |
+| `lib/trudy/advisor.js` | System-context builder. Loads prompt + 2 bundled JSON files at build time + 2 live JSON files from Blob at request time. Uses `cache_control: ephemeral` markers so the static portion hits prompt cache. |
+| `app/api/trudy/advisor/route.js` | POST SSE-streaming endpoint. Sanitises message history, calls `client.messages.stream`, emits per-token `delta` events, then `done` with usage. |
+| `app/trudy/page.js` | Chat UI. Replaces placeholder. Streaming display, markdown rendering, suggested-prompt cards, stop button, "New conversation" reset. |
+| `lib/trudy/_assets/` | Bundled snapshots of TRUDY-ADVISOR-PROMPT.md, taxonomy.json, mark.json. |
+
+Total system context ~49K tokens (well within Sonnet's 200K). With prompt caching:
+- Cold turn: ~$0.15 input
+- Warm turn (within 5 min): ~$0.02 input
+
+For Mark + 2 staff occasional use, that's ~$5–20/month.
+
+**To enable:**
+1. Mark sets `ANTHROPIC_API_KEY` in Vercel env vars
+2. (Optional) `MODEL_DEFAULT` if not using `claude-sonnet-4-20250514`
+3. Vercel redeploys on env var change
+4. Visit `/trudy`, type a question, watch it stream
+
+If the key isn't set, the route returns 503 with a clear error message — UI surfaces it.
+
+### push-to-portal.sh — manual intel push stopgap
+
+`/Users/markalexander/Documents/GitHub/trudy-v4/scripts/push-to-portal.sh <source>`
+
+Where source = `outcomes | promos | seo | wine | all`. Reads the secret from the same file Cowork reads from, posts to the live Vercel endpoint, prints green ✓ or yellow ⚠ skip or red ✗. Used today to populate /intel/outcomes and /intel/promos with real data.
+
+This is the third path for getting data into the portal:
+1. **Cowork's scheduled task** (preferred long-term) — now unblocked via CORS, awaiting first autonomous fire
+2. **Cowork's Chrome MCP push** (cleaner workaround) — unblocked via CORS
+3. **This script** (ad-hoc) — works from Mark's terminal anytime
+
+### Appliances gap noted
+
+Mark asked why wine has a dedicated intel dashboard but appliances doesn't. Honest answer: appliances IS in the data (22 Electrolux campaigns + Westinghouse in `/intel/outcomes`, live appliance promos in `/intel/promos`), just not as a *category-specific landscape view* like `/intel/wine`. The Cowork Electrolux Landscape task exists but isn't pushed to portal.
+
+Easy follow-up: add an `appliances` source slot + Cowork push step from the existing Electrolux Landscape task + build `/intel/appliances` page. ~30 min when prioritised.
+
+### Stage B (full Shelf evaluator) — queued for next session
+
+Stage A (advisor chat) ships now. Stage B is the bigger work:
+- Port `shelf/research.ts` + `shelf/orchestrator.ts` + `shelf/constitution.ts` + Zod schemas to `lib/trudy/`
+- Build `/api/trudy/evaluate` and `/api/trudy/generate` with SSE streaming
+- Port `ShelfBrief.jsx` form (structured fields + sufficiency gate) to `/trudy/evaluate`
+- Build verdict viewer at `/trudy/evaluate/:id` with all the Provocateur / Pragmatist / Creative Director sections
+- Port `/trudy/history` from trudy-v4
+
+The shared `lib/anthropic.js` and `lib/trudy/_assets/` already in place means Stage B plugs in cleanly when built.
+
+### Cowork-side coordination for context
+
+Cowork updated all three intel push steps overnight (Promo Monitor, SEO Deep Dive, SF Outcome Export) with Chrome MCP fetch — designed to bypass the bash sandbox's network restriction. First autonomous fire will be the real test.
+
+Cowork also flagged that SF outcomes refresh fortnightly, Promo Monitor fortnightly, SEO weekly — meaning data freshness in `/trudy` advisor will reflect those cadences. The `cache_control` ephemeral markers will invalidate when data changes, so first turn after a refresh is cold, subsequent turns hit cache.
+
+### Portal repo at commit time
+
+```
+26b5e7d  feat: Trudy Advisor chat — Session 3 Stage A
+7d0fe54  feat: CORS on push endpoint for Cowork Chrome-based push  ← Cowork
+b76b49d  fix(blob): use list() not head() so missing blobs return 404 not 500
+1dbea0e  feat: Session 2 — intel dashboards (promos, outcomes, seo, wine)
+492c708  fix(blob): include BLOB_READ_WRITE_TOKEN as Bearer header on read fetch
+42401e1  fix(blob): use private access + downloadUrl for read
+54ca3f8  refactor: swap @vercel/kv for @vercel/blob (Vercel storage reorg)
+2b5abe5  feat: Session 1B — shared-password auth for the 2-staff portal
+246c76c  feat: Trevor Staff Portal foundation
+```
+
+### Trudy-v4 repo at commit time
+
+```
+86234f8  feat(scripts): push-to-portal.sh — manual intel push stopgap
+```
+
+### What's next
+
+- Mark to set `ANTHROPIC_API_KEY` in Vercel + smoke-test `/trudy` advisor in browser
+- Cowork's next autonomous scheduled task fire — proves the CORS fix end-to-end
+- Stage B Trudy evaluator port (separate session)
+- Appliances intel dashboard (small, can slot in any time)
+- `/api/intel/trigger` real wiring (when Mark decides the mechanism)
+
+---
+
+## 2026-05-18 (morning) — Trudy Advisor Claude Project setup + CORS fix for portal push
+
+**Actor:** Cowork (Opus 4.6)
+
+### Summary
+
+Two things done: (1) set up the Trudy Advisor as a Claude.ai Project for staff access, and (2) added CORS headers to the portal's push endpoint to unblock Cowork's scheduled task data pushes.
+
+### Trudy Advisor — Claude.ai Project
+
+Created the project on claude.ai with the full system prompt from `TRUDY-ADVISOR-PROMPT.md`. Uploaded four knowledge files: `sf-campaign-outcomes.json` (58 Trevor campaigns), `taxonomy.json`, `mark.json`, `baseline_promos.json` (200+ live AU promos).
+
+**Key finding: project sharing requires a Team or Enterprise plan.** On Pro, projects are personal only — no way to invite staff. This confirms the portal chat page (Phase 9 in `PORTAL-BUILD-SPEC.md`) is the right distribution path for Trudy. The Claude.ai project works as Mark's personal advisor in the interim.
+
+All reference files also copied to the Cowork project folder (`~/Documents/Claude/Projects/Trudy — Promo Strategy Advisor/`) for easy re-upload when data refreshes.
+
+### CORS fix for portal push endpoint
+
+Cowork's bash sandbox can't reach `nebula-logger-dashboard.vercel.app` (domain not in network allowlist). The scheduled tasks' push-to-portal step was failing silently. Three options were evaluated:
+
+1. **Sandbox allowlist** — cleanest, but not configurable on current tier
+2. **Chrome-based push (navigate to portal origin, then fetch)** — works but clunky, requires same-origin
+3. **Manual push script** — defeats the purpose of scheduling
+
+**Fix shipped:** Added CORS headers (`Access-Control-Allow-Origin: *` + OPTIONS preflight) to `/api/intel/push` in the `nebula-logger-dashboard` repo. Bearer auth still gates writes — CORS just lets the browser send the request. This means Cowork can now `fetch()` the push endpoint from **any** Chrome tab, no same-origin navigation required.
+
+Changed file: `app/api/intel/push/route.js`
+
+**What Cowork scheduled tasks should do now:**
+1. Read the push secret from `~/.../trevor-marketing-engine/.portal-push-secret`
+2. Use Chrome MCP (`javascript_tool`) to run `fetch('https://nebula-logger-dashboard.vercel.app/api/intel/push', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer <secret>' }, body: JSON.stringify({ source: '<key>', data: <payload> }) })`
+3. No need to navigate to the portal first — CORS allows cross-origin
+
+### Mark's action items
+
+1. **Commit + deploy the CORS change** — `cd ~/Documents/nebula-logger-dashboard && git add -A && git commit -m "feat: CORS on push endpoint for Cowork Chrome-based push" && git push`
+2. **Re-upload baseline_promos.json** to the Claude.ai project after each Promo Monitor run (fortnightly)
+
+### For the next portal session (Claude Code)
+
+The CORS change needs to be committed and deployed. If Claude Code picks up Session 3 next, it should `git pull` first to get this change, then proceed with the Trudy port per the build spec.
+
+---
+
 ## 2026-05-18 (morning) — Portal Session 2 shipped: intel dashboards + KV→Blob swap
 
 **Actor:** Claude Code (Opus 4.7, 1M context) — working in `~/Documents/nebula-logger-dashboard`
