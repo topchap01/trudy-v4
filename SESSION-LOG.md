@@ -4,6 +4,130 @@ Shared handoff log between Claude Code sessions, Cowork sessions, and Mark. **Ne
 
 ---
 
+## 2026-05-18 (morning) — Portal Session 2 shipped: intel dashboards + KV→Blob swap
+
+**Actor:** Claude Code (Opus 4.7, 1M context) — working in `~/Documents/nebula-logger-dashboard`
+
+### Summary
+
+The intel half of the portal is live. Four dashboard pages reading from Vercel Blob, end-to-end pipeline verified against real test pushes. The plan had been KV but Vercel reorganised their storage suite — KV moved to Marketplace integrations (Upstash) and isn't a first-party option anymore. Swapped to Vercel Blob, which is actually a better semantic fit ("store this document, retrieve it") for what we're doing. Cowork's push step didn't need to change — the API contract stayed the same.
+
+### Commits shipped (in nebula-logger-dashboard, in order)
+
+| Commit | What it did |
+|---|---|
+| `54ca3f8` | refactor: swap @vercel/kv for @vercel/blob (Vercel storage reorg) |
+| `42401e1` | fix(blob): use private access + downloadUrl for read |
+| `492c708` | fix(blob): include BLOB_READ_WRITE_TOKEN as Bearer header on read fetch |
+| `1dbea0e` | feat: Session 2 — intel dashboards (promos, outcomes, seo, wine) |
+
+### Pipeline end-to-end verification
+
+Mark set `INTEL_PUSH_SECRET` in both Vercel env vars and the local `.portal-push-secret` file. Added a Vercel Blob store via the dashboard (auto-injected `BLOB_READ_WRITE_TOKEN`).
+
+```
+POST /api/intel/push (with bearer secret) →
+  HTTP 200, {ok:true, source:"promos", pathname:"intel/promos/latest.json",
+             url:"https://78qwl2p9uw4bmiqb.private.blob.vercel-storage.com/...",
+             updatedAt:"2026-05-18T07:01:59.659Z"}
+
+GET /api/intel/promos (with portal_auth cookie) →
+  HTTP 200, {source, data, updatedAt, url} — full round-trip works
+```
+
+### Dashboards built
+
+| Path | Source | v1 features |
+|---|---|---|
+| `/intel/promos` | `promos` (Promo Monitor fortnightly) | Summary stats, search + category + mechanic filters, sortable promo table. Defensive unwrap of array / .promos / .records shape. |
+| `/intel/outcomes` | `outcomes` (SF Outcome Export weekly) | Summary stats incl. aggregate prize claim rate, mechanic + status filters, sorted-by-entries campaign table with expandable rows showing prize ladder + cashback tiers + metadata. |
+| `/intel/seo` | `seo` (SEO Deep Dive weekly) | Adaptive renderer (shape not yet confirmed). Summary stats, pillar distribution bars, keyword gaps, visibility table, cannibalisation, competitor domains. Falls through to raw-JSON view if structures don't match. |
+| `/intel/wine` | `wine` (no push pipeline yet) | Empty state until wine push is added. Will adapt when data lands. |
+
+### Shared components
+
+- **IntelLayout.jsx** — title + tagline + last-updated freshness badge + refresh button + loading/error/empty/data state handling. Every page uses this.
+- **RefreshButton.jsx** — opens a modal showing the Cowork task name with copy-to-clipboard, plus a "Log refresh request" button (stub for now).
+- **Freshness badge** uses relative time: <1hr "just now", <24hr "N hours ago", <7day "N days ago" (amber when >24hr), older = absolute date.
+- **Empty / error / "data exists but wrong shape" states** all handled cleanly — the dashboards never crash on weird payloads, they just surface the raw JSON for inspection.
+
+### One open question for the next session
+
+**Cowork trigger mechanism.** Mark asked for the ability to fire Cowork tasks from the dashboard. The "Refresh data" button on each page opens a modal with the task name + copy button — that's v1. The portal endpoint `/api/intel/trigger` is a stub that logs the request and returns 202 "queued."
+
+To wire actual remote triggering, we need to know how Cowork accepts external triggers. Options:
+- HTTP endpoint on Cowork (localhost or remote)
+- Webhook URL via Zapier/Make/IFTTT
+- Email to Mark via transactional service
+- Append to a Blob "refresh queue" that Mark polls
+
+When the mechanism is decided, the change is small — just swap the stub body in `app/api/intel/trigger/route.js`.
+
+### Current state of intel data
+
+| Source | Status |
+|---|---|
+| `promos` | Test payload from pipeline verification. Real data on next Promo Monitor fortnightly fire. |
+| `outcomes` | No data yet. SF Outcome Export weekly; next run will push. |
+| `seo` | No data yet. SEO Deep Dive weekly (Monday 6:30am). |
+| `wine` | No data, no push step in pipeline yet. Cowork to add. |
+
+### What's next
+
+- **Session 3** — Trudy port. Full Shelf pipeline (research + evaluate + creative director + alternatives) as Next.js API routes with SSE streaming. Plus the `/trudy` form, `/trudy/results/[id]` viewer, `/trudy/history` list. Blocked on Mark setting `ANTHROPIC_API_KEY` + `SERPER_API_KEY` in Vercel env vars.
+- **Session 4** — On-demand competitive research trigger.
+- **Cowork trigger wiring** (when mechanism known) — swap the `/api/intel/trigger` stub.
+- **Wine push step** — Cowork to add when ready.
+
+### Portal repo at commit time
+
+```
+1dbea0e  feat: Session 2 — intel dashboards (promos, outcomes, seo, wine)
+492c708  fix(blob): include BLOB_READ_WRITE_TOKEN as Bearer header on read fetch
+42401e1  fix(blob): use private access + downloadUrl for read
+54ca3f8  refactor: swap @vercel/kv for @vercel/blob (Vercel storage reorg)
+2b5abe5  feat: Session 1B — shared-password auth for the 2-staff portal
+246c76c  feat: Trevor Staff Portal foundation — restructure + nav + KV scaffold
+db431ea  (prior — Mark's earlier Campaign dashboard commit)
+```
+
+---
+
+## 2026-05-17 (post-midnight) — Cowork: Push-to-KV step added to 3 scheduled tasks
+
+**Actor:** Cowork (Opus 4.6)
+
+### What was done
+
+Added a push-to-portal step to the three data-producing scheduled tasks so the Staff Portal's Vercel KV store gets fresh data on each run. This unblocks Claude Code Session 2 (intelligence dashboards).
+
+| Task | Source key | Push step |
+|------|-----------|-----------|
+| `promo-monitor-fortnightly` | `promos` | New Step 8 after email report — POSTs `baseline_promos.json` |
+| `weekly-seo-deep-dive` | `seo` | New Step 8b after saving baseline JSON — POSTs `seo-baseline-*.json` |
+| `sf-outcome-export` | `outcomes` | New Step 5b after saving JSON — POSTs `sf-campaign-outcomes.json` |
+
+**Push endpoint:** `POST https://nebula-logger-dashboard.vercel.app/api/intel/push`
+**Auth:** Bearer token from `/Users/markalexander/Documents/Claude/Scheduled/trevor-marketing-engine/.portal-push-secret`
+**Body:** `{ "source": "<key>", "data": <full JSON> }`
+
+All push steps are non-fatal — if the push fails (secret not set, network error, etc.), the task continues normally and local files are still produced.
+
+### Mark's action items
+
+1. **Set `INTEL_PUSH_SECRET` in Vercel dashboard** — any random string (e.g., `openssl rand -base64 32`)
+2. **Put the same string in** `/Users/markalexander/Documents/Claude/Scheduled/trevor-marketing-engine/.portal-push-secret` — this file currently contains the placeholder text `REPLACE_WITH_YOUR_INTEL_PUSH_SECRET`
+3. Once both are set, the next run of each task will automatically push data to KV
+
+### Notes
+
+- The bash commands use `jq` to wrap the JSON in the expected `{source, data}` envelope
+- Each task checks if the secret file contains "REPLACE_WITH" and skips gracefully if so
+- The SF outcome export was updated via the scheduled task API (not a file edit) since its folder isn't in the connected workspace
+- Portal URL is the existing `nebula-logger-dashboard.vercel.app` — can change to a custom domain later by updating the push URLs in each task
+
+---
+
 ## 2026-05-17 (late night) — Portal Session 1B shipped: shared-password auth
 
 **Actor:** Claude Code (Opus 4.7, 1M context) — working in `~/Documents/nebula-logger-dashboard`
