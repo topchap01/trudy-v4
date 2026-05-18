@@ -4,6 +4,67 @@ Shared handoff log between Claude Code sessions, Cowork sessions, and Mark. **Ne
 
 ---
 
+## 2026-05-18 (late afternoon) — Portal Session 3 Stage B1: Shelf backend ported
+
+**Actor:** Claude Code (Opus 4.7, 1M context) — working in `~/Documents/nebula-logger-dashboard`
+
+### Summary
+
+All 9 Shelf backend modules ported from `trudy-v4/apps/backend/src/` into the portal's `lib/trudy/`. The orchestrator + research + multi-agent scoring + Zod schemas now compile and live in the portal, ready to be wired up to an API route in B2. Intel readers (market-context, campaign-outcomes, seo-context) were adapted to read from Vercel Blob instead of the local filesystem — same public functions, now async. TypeScript support added to the portal alongside the existing plain JS.
+
+**Commit:** `391331d` in nebula-logger-dashboard.
+
+### Files ported (9 files, ~2,600 lines)
+
+| File | Notes |
+|---|---|
+| `constitution.ts` | Shelf framework prompts + named vocabulary. Copy as-is. |
+| `trevor-schema.ts` | Zod schemas. One Zod v4 fix: `z.record(value)` → `z.record(z.string(), value)` |
+| `models.ts` | Model resolution. Copy as-is. |
+| `openai.ts` | Anthropic SDK wrapper (chat / chatFull / chatStream / tool_use / thinking). Copy as-is. |
+| `market-context.ts` | **Adapted** — loadBaseline now reads via `readIntel('promos')`. Async public API. |
+| `campaign-outcomes.ts` | **Adapted** — loadExport now reads via `readIntel('outcomes')`. Async public API. |
+| `seo-context.ts` | **Adapted** — loadBaseline now reads via `readIntel('seo')`. Async public API. |
+| `research.ts` | **Adapted** — `chat` import path fixed, prisma cache replaced with in-memory Map, all 3 augmentation functions become async to await the now-async intel getters. |
+| `orchestrator.ts` | **Adapted** — `chat`/`chatFull`/`resolveModel` import paths fixed for same-folder layout. |
+
+### Adaptations made
+
+- **Filesystem → Blob.** Both `~/Documents/Claude/Scheduled/...` reads and the SF outcomes file read at `<repo>/data/sf-campaign-outcomes.json` now route through `readIntel(source)` from `lib/intel-store.js`. Public function signatures preserved (still return the same `MarketContextResult` / `CampaignOutcomesResult` / `SeoContextResult` shapes), just async now.
+- **Prisma research cache → in-memory Map.** The trudy-v4 research module used Prisma to dedupe 24-hour research dossiers. Portal version uses a simple `Map<key, {dossier, expiresAt}>`. Cold-start resets are fine for v1 — the cost driver is the LLM call, not the cache.
+- **TypeScript support added to the portal.** New `tsconfig.json`, `typescript` + `@types/*` installed as devDeps. Existing .js files unchanged. The 9 ported .ts files compile cleanly via `npx tsc --noEmit`.
+- **`zod` runtime dep installed** for trevor-schema.
+- **All Trevor-v4-relative imports** rewritten (`'../lib/openai.js'` → `'./openai.js'`).
+
+### Verification
+
+`npx tsc --noEmit -p .` — passes clean.
+`npm run build` — passes clean. 19 routes + middleware all compile. No new routes added in B1 (modules are dormant until B2 wires them).
+
+### What's not in B1 (queued for next session)
+
+- **B2**: `POST /api/trudy/evaluate` with SSE streaming progress events. Calls `evaluateIdea()` from the ported orchestrator. The route + storage for past evaluations (Blob-backed `eval:<id>` style keys, similar to intel-store pattern).
+- **B3**: Brief form at `/trudy/evaluate` (port `ShelfBrief.jsx` — structured fields + sufficiency gate + suggested-prompt cards), verdict viewer at `/trudy/evaluate/[id]` (port `ShelfRoutes.jsx` — Provocateur / Pragmatist / Creative Director cards + 5-lens headlines + signature moment + alternative routes), history list at `/trudy/history`.
+
+The ported orchestrator already exports `evaluateIdea(input): Promise<EvaluationVerdict>` — a single function call from any future API route handler.
+
+### Portal repo at commit time
+
+```
+391331d  feat: Stage B1 — port Shelf backend modules to portal
+26b5e7d  feat: Trudy Advisor chat — Session 3 Stage A
+7d0fe54  feat: CORS on push endpoint for Cowork Chrome-based push (Cowork)
+b76b49d  fix(blob): use list() not head() so missing blobs return 404 not 500
+1dbea0e  feat: Session 2 — intel dashboards (promos, outcomes, seo, wine)
+492c708  fix(blob): include BLOB_READ_WRITE_TOKEN as Bearer header on read fetch
+42401e1  fix(blob): use private access + downloadUrl for read
+54ca3f8  refactor: swap @vercel/kv for @vercel/blob (Vercel storage reorg)
+2b5abe5  feat: Session 1B — shared-password auth for the 2-staff portal
+246c76c  feat: Trevor Staff Portal foundation
+```
+
+---
+
 ## 2026-05-18 (afternoon) — Trudy Advisor live in portal + manual push script + appliances gap noted
 
 **Actor:** Claude Code (Opus 4.7, 1M context) — working in `~/Documents/nebula-logger-dashboard` and `~/Documents/GitHub/trudy-v4`
