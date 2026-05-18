@@ -4,6 +4,175 @@ Shared handoff log between Claude Code sessions, Cowork sessions, and Mark. **Ne
 
 ---
 
+## 2026-05-18 (evening, post-Cowork-reports) — Portal Session 3 Stage B2: Trudy evaluate API + storage
+
+**Actor:** Claude Code (Opus 4.7, 1M context) — working in `~/Documents/nebula-logger-dashboard`
+
+### Summary
+
+Wired the Stage B1 ported orchestrator into a live API. POST a brief, get back a streaming multi-agent verdict (Provocateur + Pragmatist + Creative Director + optional alternative routes). Past evaluations persist to Vercel Blob and are listable / readable for the B3 history view.
+
+**Commit:** `a3c1a12` in `nebula-logger-dashboard`.
+
+### What landed (5 new files, 414 lines)
+
+| File | Purpose |
+|---|---|
+| `lib/trudy/brief-input.ts` | IdeaInput Zod schema + checkBriefSufficiency, ported from trudy-v4 shelf.ts route |
+| `lib/trudy/evaluations-store.ts` | Blob-backed save/list/read for evaluations at `trudy/evaluations/<id>.json` |
+| `app/api/trudy/evaluate/route.ts` | POST + SSE stream — sufficiency gate, runShelfResearch, evaluateIdea, save to Blob, emit phase events |
+| `app/api/trudy/evaluations/route.ts` | GET list of past evaluations (newest first) |
+| `app/api/trudy/evaluations/[id]/route.ts` | GET single evaluation (404 if not found) |
+
+Plus two patches to B1 ported files: stripped `.js` import suffixes from `orchestrator.ts` + `research.ts` (Next.js webpack can't resolve `.js` → `.ts`).
+
+### How the evaluate flow works
+
+```
+POST /api/trudy/evaluate (body: IdeaInput)
+  │
+  ├─ data: {type:'phase', phase:'validate', message:'Checking the brief...'}
+  │
+  ├─ checkBriefSufficiency(input)
+  │  ├─ insufficient → persist NEEDS_INPUT verdict, emit 'done', close. No LLM call.
+  │  └─ sufficient → continue
+  │
+  ├─ data: {type:'phase', phase:'research', message:'Building research dossier...'}
+  ├─ runShelfResearch(...)   ← Promo Monitor + SF outcomes + SEO augmentation from Blob
+  │
+  ├─ data: {type:'phase', phase:'evaluate', message:'Running Provocateur / Pragmatist / Creative Director...'}
+  ├─ evaluateIdea(input, research)   ← multi-agent verdict, ~30-90s with thinking
+  │
+  ├─ data: {type:'phase', phase:'save', message:'Saving evaluation...'}
+  ├─ saveEvaluation({id, evaluatedAt, brief, verdict, research})
+  │
+  └─ data: {type:'done', id:'eval_<...>', verdict:{...}}
+```
+
+If anything throws, emits `data: {type:'error', message:'...'}` instead of `done`.
+
+### Verified
+
+- `npx tsc --noEmit -p .` — clean.
+- `npm run build` — clean. 4 new dynamic routes registered.
+- Deployed to production. All 3 routes return HTTP 401 to unauthenticated curl (proves they exist + middleware gating is active).
+
+### Storage model
+
+- `trudy/evaluations/eval_<base36ms>_<6char>.json` — one blob per evaluation, sortable-by-time IDs
+- Both successful verdicts AND NEEDS_INPUT placeholders persisted, so history shows everything you attempted
+- Each record: `{ id, evaluatedAt, brief, verdict, research? }`
+- B3's history page lazy-loads each card's full record (~same pattern as trudy-v4's history)
+
+### Mark's pre-test checklist
+
+1. `ANTHROPIC_API_KEY` already set in Vercel (Advisor uses it)
+2. `BLOB_READ_WRITE_TOKEN` already set (intel pipeline uses it)
+3. **No additional env vars needed** — B2 reuses both
+
+To poke it from a browser DevTools console (while signed in to the portal):
+```js
+const res = await fetch('/api/trudy/evaluate', {
+  method: 'POST',
+  headers: {'Content-Type': 'application/json'},
+  body: JSON.stringify({
+    brand: 'Beko', category: 'Kitchen appliances',
+    mechanic: 'Cashback', rewardDescription: 'Tiered cashback $150-$500',
+    majorPrizeValue: 500, prizeCount: 50,
+    startDate: '2026-06-01', endDate: '2026-07-31',
+    headline: 'Win up to $500 cashback',
+    entryRequirement: 'Buy 2+ Beko appliances, upload receipt'
+  })
+});
+const reader = res.body.getReader();
+const dec = new TextDecoder();
+while (true) {
+  const {done, value} = await reader.read();
+  if (done) break;
+  console.log(dec.decode(value));
+}
+```
+
+You'll see phase events stream in, then a `done` event with the full verdict + new `eval_*` id.
+
+### What's still queued (B3)
+
+- Brief form at `/trudy/evaluate` — port `ShelfBrief.jsx` (structured fields, sufficiency hint, suggested-prompt cards, navigate to viewer on done)
+- Verdict viewer at `/trudy/evaluate/[id]` — port `ShelfRoutes.jsx` (Provocateur / Pragmatist / Creative Director cards, 5-lens headline grid, signature moment, alternative routes with ambition zone stripes, reclassification call-out)
+- History list at `/trudy/history` — port `ShelfHistory.jsx` (card grid, verdict-badge, click-to-view)
+
+All three are pure frontend now — the API is live and waiting.
+
+### Note for next session
+
+Cowork shipped a **Client Reports** feature in parallel (see entry below) — pptxgenjs + jspdf + new `/reports` page + `/api/reports/generate` route. The files are sitting uncommitted in Mark's portal repo at commit time. Mark or the next session should `git add app/reports app/api/reports lib/report-*.js + the modified shell files`, commit, and deploy. Doesn't touch B2 — fully orthogonal.
+
+### Portal repo at commit time
+
+```
+a3c1a12  feat: Stage B2 — Trudy evaluate API + evaluation storage    ← this
+391331d  feat: Stage B1 — port Shelf backend modules to portal
+26b5e7d  feat: Trudy Advisor chat — Session 3 Stage A
+7d0fe54  feat: CORS on push endpoint for Cowork Chrome-based push
+b76b49d  fix(blob): use list() not head() — empty sources return 404
+1dbea0e  feat: Session 2 — intel dashboards
+[+ earlier]
+```
+
+---
+
+## 2026-05-18 (evening) — Client Reports feature added to portal
+
+**Actor:** Cowork (Opus 4.6) — working in `~/Documents/nebula-logger-dashboard`
+
+### What was built
+
+Full "Client Reports" feature on the Trevor Staff Portal — staff can generate downloadable PPTX or PDF reports to share with clients, combining:
+
+1. **Campaign performance** — pulled from `outcomes` intel source (sf-campaign-outcomes data). Single campaign deep dive or full portfolio view.
+2. **Competitive landscape** — pulled from `promos` intel source (baseline_promos). Filtered by category. Shows mechanic distribution, top promoters, top promos by value.
+3. **AI strategic recommendations** — Claude (via portal's existing Anthropic SDK) generates Trudy-voice recommendations using the Shelf Truth framework, grounded in the actual campaign + market data.
+
+### Files created
+
+| File | Purpose |
+|------|---------|
+| `app/reports/page.js` | Client-facing report builder UI — select client, campaign, category, format (PPTX/PDF), toggle market data and AI recs |
+| `app/api/reports/generate/route.js` | API route — gathers data, calls Claude for recs, generates PPTX or PDF, streams as download |
+| `lib/report-data.js` | Data layer — reads from Vercel Blob intel store, filters, computes stats |
+| `lib/report-pptx.js` | PPTX generator using pptxgenjs — branded dark-theme slides: cover, exec summary, campaign detail, prize analysis, competitive landscape, AI recommendations, closing |
+| `lib/report-pdf.js` | PDF generator using jsPDF — print-friendly A4 landscape with same data sections |
+
+### Files modified
+
+| File | Change |
+|------|--------|
+| `components/Nav.jsx` | Added "Client Reports" section with "Generate Report" link |
+| `app/page.js` | Added "Client Reports" card to landing grid (orange accent) |
+| `app/globals.css` | Added `.reports-*` styles — config panel, format toggle, preview slides, mobile responsive |
+| `package.json` | Added `pptxgenjs` and `jspdf` dependencies |
+
+### Design decisions
+
+- **PPTX uses dark theme** matching the portal aesthetic (navy bg, cyan accent) — looks premium in presentations
+- **PDF uses light/print theme** — white bg, proper for printing/emailing
+- **AI recs are optional** — checkbox toggle; report generates without them if Anthropic API isn't configured or if user unchecks
+- **Graceful degradation** — if outcomes or promos data isn't available, report still generates with whatever data exists
+- **Preview panel** — right side of the page shows a mini slide preview so staff know what they're about to generate before hitting the button
+
+### Dependencies added
+
+- `pptxgenjs ^4.0.1` — server-side PowerPoint generation
+- `jspdf ^4.2.1` — server-side PDF generation
+
+### What's next
+
+- Deploy to Vercel (git push)
+- Test with real data (outcomes + promos need to be pushed to Vercel Blob first)
+- Could add: custom branding per client, historical trend charts, email delivery option
+
+---
+
 ## 2026-05-18 (late afternoon) — Portal Session 3 Stage B1: Shelf backend ported
 
 **Actor:** Claude Code (Opus 4.7, 1M context) — working in `~/Documents/nebula-logger-dashboard`
