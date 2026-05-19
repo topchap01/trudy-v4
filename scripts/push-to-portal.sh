@@ -14,6 +14,7 @@
 #   promos    →  ~/Documents/Claude/Scheduled/promo-monitor-fortnightly/baseline_promos.json
 #   seo       →  ~/Documents/Claude/Scheduled/weekly-seo-deep-dive/seo-baseline-*.json (latest)
 #   wine      →  ~/Documents/Claude/Scheduled/wine-promotional-landscape/wine-landscape-*.json (latest)
+#   electrolux→  ~/Documents/Claude/Scheduled/electrolux-promo-landscape/electrolux-landscape-*.json (latest)
 #   all       →  pushes every available source in sequence
 #
 # Requires: bash, curl, jq.
@@ -33,7 +34,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # ── Known source names — used to validate the CLI arg ─────────────────────
-KNOWN_SOURCES=(outcomes promos seo wine)
+KNOWN_SOURCES=(outcomes promos seo wine electrolux)
 
 is_known_source() {
   local source="$1"
@@ -53,6 +54,7 @@ file_for_source() {
     promos)   echo "$HOME/Documents/Claude/Scheduled/promo-monitor-fortnightly/baseline_promos.json" ;;
     seo)      ls -t "$HOME/Documents/Claude/Scheduled/weekly-seo-deep-dive/"seo-baseline-*.json 2>/dev/null | head -n 1 ;;
     wine)     ls -t "$HOME/Documents/Claude/Scheduled/wine-promotional-landscape/"wine-landscape-*.json 2>/dev/null | head -n 1 ;;
+    electrolux) ls -t "$HOME/Documents/Claude/Scheduled/electrolux-promo-landscape/"electrolux-landscape-*.json 2>/dev/null | head -n 1 ;;
     *)        echo "" ;;
   esac
 }
@@ -138,7 +140,7 @@ push_one() {
 if [[ $# -lt 1 ]]; then
   cat >&2 <<EOF
 usage: $0 <source>
-sources: outcomes, promos, seo, wine, all
+sources: outcomes, promos, seo, wine, electrolux, all
 
 example:
   $0 outcomes      # Push the SF campaign export
@@ -152,7 +154,7 @@ SOURCE_ARG="$1"
 
 if [[ "$SOURCE_ARG" == "all" ]]; then
   any_failed=0
-  for src in outcomes promos seo wine; do
+  for src in outcomes promos seo wine electrolux; do
     push_one "$src" || any_failed=1
   done
   exit "$any_failed"
