@@ -4,6 +4,57 @@ Shared handoff log between Claude Code sessions, Cowork sessions, and Mark. **Ne
 
 ---
 
+## 2026-05-19 — Trudy evaluate/history surfaced in nav
+
+**Actor:** Claude Code (Opus 4.7) — working in `~/Documents/nebula-logger-dashboard`
+
+### What shipped
+
+- `27274ba` — feat: surface `/trudy/evaluate` and `/trudy/history` in `components/Nav.jsx` and `app/page.js`. Drops the "coming soon" placeholders; both routes are live (return 307 → /login through the auth middleware, as expected).
+
+Deployed to production via `vercel --prod --yes`. The one thing flagged as blocking in Cowork's earlier handover is now done — staff can reach the brief form and history list from the sidebar and landing page.
+
+### Still open
+
+- Wine push step in `wine-promo-landscape` (Cowork side).
+- Electrolux landscape push — decision pending: `/intel/appliances` (broad whitegoods) vs `/intel/electrolux` (Trevor client-specific).
+- `/api/intel/trigger` still a stub — needs wiring to a real Cowork firing mechanism.
+- `/trudy/evaluate/[id]` could grow a "Generate PPTX for client" button reusing Client Reports formatting (Mark to decide if worth it).
+
+---
+
+## 2026-05-19 — Git commits, SEO renderer fix, task persistence bug fix
+
+**Actor:** Cowork (Opus 4.6) — working in `~/Documents/nebula-logger-dashboard` + scheduled task configs
+
+### Git commits shipped
+
+- `c29699f` — feat: Client Reports (PPTX + PDF generation with AI recommendations). 5 new files, 4 modified, 1989 lines added.
+- `326031b` — chore: gitignore next-env.d.ts and tsconfig.tsbuildinfo
+- `f699689` — fix: SEO page renderer maps actual baseline shape (keyword_observations object → keyword table, pillar_distribution → bars, keyword_gaps → gap list, indexation stats, actions taken section)
+
+### SEO portal push confirmed working
+
+The weekly-seo-deep-dive task ran autonomously and successfully pushed data to the portal via Chrome MCP `javascript_tool` + `fetch()`. Data is live on `/intel/seo`. This proves the bash-sandbox workaround (commit `7d0fe54` CORS + Chrome fetch) is reliable.
+
+### Task file persistence bug — systemic fix
+
+Discovered that every scheduled task saving dated archive files to its own directory was losing them. Root cause: task agents used bash to write files, but bash runs in an ephemeral sandbox where host paths aren't directly writable. Files vanished between sessions.
+
+**Affected tasks (all fixed):**
+- `weekly-seo-deep-dive` — zero baseline files ever persisted. Seeded `seo-baseline-2026-05-19.json` manually.
+- `sf-outcome-export` — archive copies (`sf-outcomes-[date].json`) never persisted. Primary output to `trudy-v4/data/` was fine (different connected folder).
+- `electrolux-promo-landscape` — landscape JSON never persisted.
+- `wine-promo-landscape` — landscape JSON never persisted.
+
+**Fix:** Updated all 4 SKILL.md files with explicit instructions to use Write/Read/Glob tools instead of bash for any file that needs to persist in the task's own directory.
+
+### Handover
+
+Saved `HANDOVER-TO-CLAUDE-CODE.md` in trudy-v4 with updated status. Only remaining item for Claude Code: add Trudy evaluator links to Nav.jsx and landing page.
+
+---
+
 ## 2026-05-18 (evening) — Client Reports feature + portal push pipeline fix
 
 **Actor:** Cowork (Opus 4.6) — working in `~/Documents/nebula-logger-dashboard` + scheduled task configs
