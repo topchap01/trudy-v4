@@ -4,6 +4,52 @@ Shared handoff log between Claude Code sessions, Cowork sessions, and Mark. **Ne
 
 ---
 
+## 2026-05-19 — Master Control inbox + Postgres foundation + intel reactor v1
+
+**Actor:** Claude Code (Opus 4.7) — working in `~/Documents/nebula-logger-dashboard`
+
+### The strategic reframe Mark made tonight
+
+> "I want us to build the data that feeds our own AI and I end up being the master control or we use Claude to sense check daily etc."
+> "Everything we drag in just makes it wiser and wiser."
+
+This shifts the project. The portal is no longer "dashboards with action lists nobody actions" — it's the foundation for **Trevor's accumulating institutional intelligence**. Every intel push, every evaluation, every decision Mark makes becomes structured queryable data that Trudy reasons over in future work. The "madness" of Cowork schedules goes away; the portal becomes the orchestrator with Mark as master control, and Claude doing daily sense-check across the data.
+
+### What shipped tonight
+
+- `0f2e13f` — **Master Control inbox foundation.** Neon Postgres connected via Vercel Storage. New `proposals` table holds every Trudy output that wants a human decision. New routes: `GET/POST /api/trudy/proposals`, `PATCH /api/trudy/proposals/[id]`. New UI: `/trudy/control` (filter chips for Pending / Approved / Rejected / All, expandable cards, inline approve/reject with a "why" textarea that captures Mark's reasoning as future training signal). New `/admin` page with "Run migrations" button (gated by middleware cookie). New `lib/db.js` (`@neondatabase/serverless`), `lib/proposals.js` CRUD, `migrations/001_proposals.sql`. `/api/trudy/evaluate` now writes a proposal row alongside the Blob save — every new evaluation lands in the inbox automatically.
+- `658298c` — **Migration SQL parser fix.** First migration attempt failed because my splitter dropped chunks starting with `--`, killing the `CREATE TABLE` whenever its file had a comment header. Now strips line comments first, then splits on `;`. Applied to both `app/api/admin/migrate/route.js` and `scripts/migrate.mjs`.
+- `b04bd06` — **Intel reactor v1.** Migration `002_intel_snapshots.sql` adds the time-series log Trudy will diff over time. `/api/intel/push` now writes a snapshot row + auto-creates a "Fresh intel" proposal with a computed summary (counts, top brands, mechanic spread, prize values, etc.) every time a Cowork task — or eventually a portal cron job — pushes data. New `/admin` "Backfill intel snapshots" button walks existing blobs (seo, promos, wine, electrolux, outcomes) and seeds Postgres so day-one Trudy isn't empty. New `lib/intel-snapshots.js` with `summarizeIntel(source, data)` per-source summary helpers.
+
+### Current architecture
+
+Postgres (Neon, via Vercel Storage):
+- `proposals` — every Trudy output awaiting Mark's decision; captures status, decision_note, executed_at
+- `intel_snapshots` — append-only log of intel pushes; jsonb data + computed summary
+- `schema_migrations` — version table for ordered migrations
+
+Vercel Blob:
+- `intel/*` — canonical "latest" intel per source (still the source of truth for dashboards)
+- `trudy/evaluations/<id>.json` — full evaluation verdicts
+
+The two coexist: Blob holds raw/large payloads, Postgres holds the time-series + decision history Trudy reasons over.
+
+### Open milestones (in priority order, per Mark)
+
+1. **Trudy reasoning over snapshots + past decisions** — when `/api/trudy/evaluate` runs, query past intel snapshots + past `proposals.decision_note` rows + past evaluations, feed them to the orchestrator so verdicts are grounded in actual Trevor history. ("We saw cashback at this scale 6 months ago — Mark rejected it because Harvey Norman pushed back. Here's a different mechanic.")
+2. **Diff-aware proposals** — instead of "Fresh wine intel: 47 promos", emit "Vinarchy moved cashback $1k → $2k vs last month" — real change detection across consecutive snapshots.
+3. **Daily Claude sense-check cron** — nightly Claude review of yesterday's intel + evaluations + decisions; outputs meta-insights ("three cashback proposals rejected this week — your cashback heuristic may need an update").
+4. **Move intel collection to portal** — kill Cowork tasks one at a time. SF Outcomes first (pure Salesforce API, half-day). SEO next (Serper API). Promo Monitor / Wine / Electrolux last (Browserless.io ~$30-50/mo).
+
+### Operator notes
+
+- Mark provisioned Neon via Vercel Storage tonight. `DATABASE_URL` is auto-injected in Production + Preview. Local dev needs `vercel env pull --environment=production .env.production.local` but secrets are sanitized — to run migrations locally use `scripts/migrate.mjs` after adding the URL manually, or just hit `/admin/migrate` from a logged-in browser.
+- `migrations/` is the source of truth for schema. Add new files as `00N_<name>.sql`. The runner is idempotent (uses `CREATE TABLE IF NOT EXISTS` + `ON CONFLICT DO NOTHING` on `schema_migrations`).
+- `.env.production.local` is now gitignored (along with `.env.local` and `.env.*.local`).
+- Latest commit on prod: `b04bd06`. Next tyre-kicking step for Mark when he's back: hit `/admin` and click both buttons in order (migrate, then backfill), then open `/trudy/control` to see the inbox populated with ~4 proposals from current intel state.
+
+---
+
 ## 2026-05-19 — Evaluate timeout fix + PPTX export from verdict viewer
 
 **Actor:** Claude Code (Opus 4.7) — working in `~/Documents/nebula-logger-dashboard`
