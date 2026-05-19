@@ -4,6 +4,40 @@ Shared handoff log between Claude Code sessions, Cowork sessions, and Mark. **Ne
 
 ---
 
+## 2026-05-19 — Evaluate timeout fix + PPTX export from verdict viewer
+
+**Actor:** Claude Code (Opus 4.7) — working in `~/Documents/nebula-logger-dashboard`
+
+### What shipped
+
+- `381e4d8` — fix: `/api/trudy/evaluate` `maxDuration` 60s → 300s. First real Beko evaluation hit the 60s ceiling on the multi-agent pipeline and Vercel returned a runtime timeout. 300s is the Pro maximum and gives comfortable headroom.
+- `d0e77fd` — feat: PPTX export from `/trudy/evaluate/[id]`. New "Download PPTX" button on the verdict viewer. Streams `application/vnd.openxmlformats…` from `GET /api/trudy/evaluations/[id]/pptx`. Slide builder lives at `lib/trudy-verdict-pptx.js` (reuses the Trevor brand palette from `report-pptx.js`).
+
+Deck includes (transparency-forward, ~13 slides): cover with verdict badge → verdict + rationale + reclassification → what works / breaks / change board → three voices side-by-side with scores → message hierarchy (current vs improved) → five headline angles (one row per lens) → signature moment → kill sheet table → 3-Second Equation (big numbers, three cards) → retailer readiness + S.O.S. pitch → one slide per alternative route (SAFE/BOLD/RIDICULOUS with top 3 headlines and signature moment) → closing.
+
+End-to-end smoke test passed: real Beko brief returned a full REWORK verdict, all sections populated.
+
+### Verified
+
+- Beko evaluation Provocateur 3 / Pragmatist 3 / Creative Director 7 — reclassification path didn't trigger because no individual score hit 7 except CD. Worth a future tune to also trigger reclassification when Creative Director alone scores ≥8 (the headlines were good).
+
+### Quality issue flagged (deferred per Mark)
+
+The three alternative routes (Tier Ladder / Winter Warmth / Kitchen Confidence) had **nearly identical signature moments** ("cashback credited to energy bills") and nearly identical headlines across SAFE/BOLD/RIDICULOUS. The route names and mechanics differentiated; the creative didn't. Likely fix in the orchestrator alternatives prompt — force distinct signature moments and headlines per ambition zone. Mark wants this addressed later.
+
+### Cowork's parallel work this session
+
+- `ea5969e` — Electrolux Landscape intel page + push pipeline. New `/intel/electrolux` route with filters, charts, stats, full promo table. Push step added to `electrolux-promo-landscape` SKILL.md. Nav and landing card updated. Decision implicit: client-specific route name (`/intel/electrolux`) not category-broad (`/intel/appliances`).
+
+### Still open
+
+- Alternative-route differentiation bug (above).
+- Reclassification trigger when only Creative Director scores high.
+- Wine push step in `wine-promo-landscape` (Cowork side).
+- `/api/intel/trigger` still a stub — needs wiring to real firing mechanism.
+
+---
+
 ## 2026-05-19 — Trudy evaluate/history surfaced in nav
 
 **Actor:** Claude Code (Opus 4.7) — working in `~/Documents/nebula-logger-dashboard`
