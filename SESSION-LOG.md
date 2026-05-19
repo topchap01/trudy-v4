@@ -4,6 +4,34 @@ Shared handoff log between Claude Code sessions, Cowork sessions, and Mark. **Ne
 
 ---
 
+## 2026-05-18 (evening) — Client Reports feature + portal push pipeline fix
+
+**Actor:** Cowork (Opus 4.6) — working in `~/Documents/nebula-logger-dashboard` + scheduled task configs
+
+### Client Reports feature
+
+Built a full report generation feature on the portal at `/reports`. Staff select a client, campaign, category, and format (PPTX or PDF), then download a polished deck/document combining campaign performance, competitive landscape, and AI-generated strategic recommendations (Trudy voice, Shelf Truth framework).
+
+**Files created:** `app/reports/page.js`, `app/api/reports/generate/route.js`, `lib/report-data.js`, `lib/report-pptx.js`, `lib/report-pdf.js`
+**Files modified:** `components/Nav.jsx`, `app/page.js`, `app/globals.css`, `package.json` (added pptxgenjs + jspdf)
+
+**Note:** These files are uncommitted — next Claude Code session or Mark should `git add` and deploy.
+
+### Portal push pipeline fix
+
+All three data-pushing scheduled tasks were broken for two reasons:
+1. **Stale secret:** `.portal-push-secret` had an old value that didn't match `INTEL_PUSH_SECRET` on Vercel → updated to current value
+2. **Wrong push method:** All used `curl` in bash, but the Cowork sandbox can't reach external domains → rewrote to use Chrome MCP `javascript_tool` with `fetch()` (works via CORS headers added earlier today)
+
+**Tasks updated:**
+- `weekly-seo-deep-dive` (Step 8b)
+- `promo-monitor-fortnightly` (Step 8)
+- `sf-outcome-export` (Step 5b)
+
+All pushes remain non-fatal — local files and email reports still succeed if the push fails.
+
+---
+
 ## 2026-05-18 (evening, post-Cowork-reports) — Portal Session 3 Stage B2: Trudy evaluate API + storage
 
 **Actor:** Claude Code (Opus 4.7, 1M context) — working in `~/Documents/nebula-logger-dashboard`
