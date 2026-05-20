@@ -4,6 +4,43 @@ Shared handoff log between Claude Code sessions, Cowork sessions, and Mark. **Ne
 
 ---
 
+## 2026-05-20 — Intel data-quality fixes: promos fields, electrolux gaps, sense-check guard
+
+**Actor:** Claude Code (Opus 4.7) — portal `~/Documents/nebula-logger-dashboard` + electrolux task SKILL.md
+
+Mark reviewed the first Master Control proposals and rejected the Promo Monitor one ("158 promotions and no brands"). Investigated all the intel feeds. Findings + fixes:
+
+### Promo Monitor summary (portal) — FIXED
+
+- **Root cause:** `summarizeIntel` lumped promos in with wine/electrolux and counted `brand`/`retailer`. Promo Monitor records use `promoter`/`category`/`technique` — no brand/retailer. Hence "184 promos / 0 brands".
+- **Fix (`4ab6b0b`, merged with Cowork's parallel work):** promos now has its own summarizer — promoters, categories, top techniques.
+- **Second issue:** promos prize-value stats were garbage (avg $520k, max $40M). The raw `value` field is unnormalised — **0 of 184 records have `parsedValue`**, and raw values span $1k to a wrong $10M ("$100 Coles voucher" tagged $10.1M). Dropped value stats from the promos summary until fixed upstream.
+- **UPSTREAM TODO (Cowork):** `promo-monitor-fortnightly` isn't running its own Step-2d `parsedValue` normalisation. Until it does, promo value data is unusable. Once it emits clean `parsedValue`, re-enable value stats in `lib/intel-snapshots.js` (promos branch).
+
+### Electrolux landscape — DIAGNOSED + SKILL.md FIXED
+
+The electrolux report Mark saw was bad for three reasons, all upstream (not a portal bug — the portal renders faithfully):
+
+1. **It pushes a summary object, not records.** Unlike wine/promos, the task pushed `{ brandCounts, typeCounts, gaps, ... }` instead of the raw promo array — so no titles, no click-through, degraded fallback view. The SKILL.md already said "push records, not summary" (so this run disobeyed).
+2. **The gaps contradict its own counts.** Gap "No cashback or trade-in mechanics" while `typeCounts` shows **Trade-In: 3**. Gap "No vacuum/floor care" while Dyson is in the brand list. The task hallucinated gaps instead of deriving them.
+3. **Partial scrape:** 9 of 15 sources succeeded, 4 failed — so several "gaps" are likely false negatives from sources that didn't load.
+
+**SKILL.md fixes drafted** (`~/Documents/Claude/Scheduled/electrolux-promo-landscape/SKILL.md`):
+- **Gap self-consistency rule** (Slide 16): every gap must be verified against the counts before stating it; distinguish "absent from entire market sample" (count 0 across all brands) vs the real strategic gap "Electrolux Group absent from a mechanic competitors use" (must cite competitor count); caveat any gap in a category covered by a failed source.
+- **Mandatory pre-push verification:** a `javascript_tool` guard that confirms `data` is a records array (≥5 records, has `brand`/`title`) and hard-fails if it looks like a summary object (`brandCounts`/`typeCounts`/`gaps`). The "push records" instruction existed but nothing enforced it — now it can't push the wrong shape.
+- **Action for Cowork:** re-run `electrolux-promo-landscape` so it pushes records — the portal blob still holds the stale bad summary until then.
+
+### Portal sense-check guard — SHIPPED (`c309b5b`)
+
+- New `flagGapContradictions(data)` in `lib/intel-snapshots.js`: source-agnostic — for any payload with a `gaps` array + count objects, flags negating gaps ("no X") that name a token with a non-zero count. Caught the live electrolux trade-in contradiction.
+- When contradictions exist: proposal title gets a ⚠️ prefix, confidence drops to `low`, and the body spells out each contradiction. This is the **seed of the daily Claude sense-check layer** — it'll generalise to records-shape analysis later.
+
+### Coordination note
+
+Cowork is actively committing to the portal repo in parallel (added the Electrolux summary-fallback renderer + summary-shape handling in `79bb504`/`4ab6b0b`). Merges have been clean so far because we've touched adjacent concerns, but **watch `lib/intel-snapshots.js` and `app/intel/electrolux/page.js`** — both of us edit those. Latest portal commit: `c309b5b`.
+
+---
+
 ## 2026-05-19 — Master Control inbox + Postgres foundation + intel reactor v1
 
 **Actor:** Claude Code (Opus 4.7) — working in `~/Documents/nebula-logger-dashboard`
