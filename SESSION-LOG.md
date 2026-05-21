@@ -4,6 +4,54 @@ Shared handoff log between Claude Code sessions, Cowork sessions, and Mark. **Ne
 
 ---
 
+## 2026-05-21 (cont.) — Reactor intelligence: diff proposals, daily sense-check, chat attachments, cleanup
+
+**Actor:** Claude Code (Opus 4.7) — portal `~/Documents/nebula-logger-dashboard` + SEO task SKILL.md
+
+Built out the agentic layers on top of the now-working eval stack. Portal commits `3638325` → `301d04c`.
+
+### Diff-aware intel proposals — `3638325`
+
+The reactor no longer says "47 promos." On each push it diffs against the previous snapshot and surfaces movement: brand-level moves lead (new/dropped brands, per-brand prize-value shifts — the "Vinarchy top prize $1k→$2k" headline), then count/value deltas; SEO diffs page-1/gaps/refresh; outcomes diffs active/entries. First push of a source → baseline; subsequent with changes → diff proposal; no change → snapshot logged, **no proposal** (kills inbox noise). Lives in `lib/intel-snapshots.js` (`diffIntel`, `buildDiffProposal`).
+
+### Daily Claude sense-check (the meta-layer) — `c3e3f3c`
+
+`lib/sense-check.js` `runSenseCheck()` reads the last 24h (snapshots+diffs, proposals created, Mark's decisions+notes, contradictions) and asks Claude for 3-6 prioritised observations → lands as a `sense_check` proposal in Master Control. Triggers: `/api/cron/sense-check` (Vercel Cron daily `0 20 * * *` ≈ 6am AEST, gated by `CRON_SECRET` which Mark set), plus `/api/admin/sense-check` + an /admin button for manual runs.
+
+**First real run was genuinely sharp** — it caught a zero-count Electrolux proposal reaching approval, inferred the brand-metadata pattern, and flagged the thin SEO dataset. Validates the whole architecture. Acted on its findings:
+
+### Sense-check-driven fixes — `b28b5e4`
+
+- **Empty-payload guard:** `isEmptyIntel()` + `buildEmptyDataProposal()` — a zero-count push (failed scrape) now surfaces as a ⚠️ low-confidence data-quality flag, not "fresh intel: 0 promos".
+- **Backfill idempotency:** `/admin` backfill now skips sources that already have a snapshot (and skips empty payloads) — the cause of the "duplicate snapshots" the sense-check flagged was backfill being clicked twice, not a pipeline double-fire.
+- The "0 brands" promos proposal it flagged was **stale** (pre-`4ab6b0b`); the "Why" decision notes were **Mark's test input**, not a bug (textarea is properly controlled).
+
+### Inbox purge — `301d04c`
+
+`/admin` → "Purge all proposals" (guarded) wipes the inbox of build/test/seed noise; snapshots kept so the diff engine retains baselines. Inbox repopulates from real activity. `deleteProposals({source?})` in `lib/proposals.js` supports scoped cleanups later.
+
+### Trudy chat file attachments — `50feaec`
+
+📎 button in Ask Trudy. PDF → native Claude document block; DOCX → mammoth; XLSX/CSV → sheetjs per-sheet; TXT/MD → inline. `lib/trudy/attachments.js`. 15MB/file, max 5, 200k-char truncation, graceful per-file errors. Bytes ride only on the turn attached (history stays light — re-attach for deep multi-turn doc work). Advisor `maxDuration` → 120s.
+
+### Admin discoverability — `4102756`
+
+Added a System → Admin link to the sidebar (was URL-only).
+
+### SEO task SKILL.md — keyword expansion + completeness + Serper method (Cowork action)
+
+`~/Documents/Claude/Scheduled/weekly-seo-deep-dive/SKILL.md`:
+- **Root issue:** the list had 23 keywords but the baseline only logged 9 — the task dropped the "Not found" ones. Added a **completeness mandate** + pre-save self-check (`keyword_observations` must equal the list count, currently **43**).
+- **Expanded 23 → 43**: more primary/long-tail mechanic+service terms, plus a new **Category & Client-Sector** group (appliances/whitegoods, wine/liquor, FMCG, retail, grocery).
+- **Serper method (preferred):** replaced unreliable sandbox Google searches with Serper via Chrome `fetch()` (consistent AU geo → comparable week-to-week trends, and positions become meaningful). **Action for Mark:** save the funded Serper key to `~/Documents/Claude/Scheduled/trevor-marketing-engine/.serper-key` so the SEO task and portal share it.
+
+### Still open (Cowork side)
+
+- Re-run `electrolux-promo-landscape` (records-push + grounded gaps) and `promo-monitor-fortnightly` (`parsedValue`) per the 2026-05-20 fixes — both still pushing old shapes.
+- Save `.serper-key` for the SEO task; then re-run `weekly-seo-deep-dive` to get the full 43-keyword Serper-based baseline.
+
+---
+
 ## 2026-05-21 — Trevor-memory loop live; model migration; Pro upgrade; Serper fixed
 
 **Actor:** Claude Code (Opus 4.7) — portal `~/Documents/nebula-logger-dashboard`
