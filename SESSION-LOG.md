@@ -4,6 +4,36 @@ Shared handoff log between Claude Code sessions, Cowork sessions, and Mark. **Ne
 
 ---
 
+## 2026-05-21 (cont. 2) — Document output: copy/export, deck polish, backend spike → skipped
+
+**Actor:** Claude Code (Opus 4.7) — portal `~/Documents/nebula-logger-dashboard`
+
+Mark's ask: Trudy should produce Word/PPT and let him copy responses; and the PPTX decks "no longer cope with size" and look messy. Addressed end-to-end. Portal commits `23b2260` → `d9573b9`.
+
+### Copy + export Trudy chat responses — `23b2260`
+
+Every Trudy answer now has a hover action row: **Copy**, **Word**, **PowerPoint**. `lib/trudy/markdown-blocks.js` (shared markdown parser) + `lib/trudy/export-docx.js` (docx lib) + `lib/trudy/export-pptx.js` (pptxgenjs, slide-split on headings). `/api/trudy/export` POST {content, format, title} → binary. Both formats verified valid. Installed `docx`.
+
+### PPTX size handling — `fdb5fc4`
+
+Root cause of the "messy" decks: fixed-height text boxes that clipped on long content. Enabled pptxgenjs `fit:'shrink'` on every content box in the verdict deck (23) + chat export. Stress-tested with oversized content.
+
+### Spike: is a Claude code-execution backend worth it? — NO
+
+Mark asked whether to wire Anthropic's code-execution + pptx Skill into the portal for designer-grade decks. Ran a spike: pulled the real Beko evaluation from Blob and hand-built a polished deck **with pptxgenjs** (cards, stat callouts, ⌗ motif, premium Trebuchet/Calibri dark palette, no under-title lines). **Finding: the quality gap was design, not engine.** A well-built pptxgenjs template gets ~90% of the way with zero new infra, latency, or per-deck cost. Mark judged it "good enough" → **backend skipped.** (Couldn't auto-QA visually — no LibreOffice on the Mac — so visual bug-hunt is deferred to Mark's eye on real decks.)
+
+### Polished verdict deck ported into portal — `d9573b9`
+
+Replaced `lib/trudy-verdict-pptx.js` (765 lines of crude fixed-box layout) with the spike's design (250 lines). Same `generateVerdictPptx(record)` API. Every `/trudy/evaluate/[id]` PPTX download is now the polished deck. Reference copies in `~/Downloads/trudy-beko-deck.pptx` (spike) and `trudy-beko-deck-portal.pptx` (live module).
+
+### Open / optional
+
+- Port the same design language into the **chat-export PPTX** (currently the simpler generator).
+- Visual QA pass on a real deck once Mark opens one (overflow/overlap check).
+- Still outstanding from prior entries (Cowork side): re-run `electrolux-promo-landscape` + `promo-monitor-fortnightly`; save `.serper-key` and re-run `weekly-seo-deep-dive` for the 43-keyword Serper baseline.
+
+---
+
 ## 2026-05-21 (cont.) — Reactor intelligence: diff proposals, daily sense-check, chat attachments, cleanup
 
 **Actor:** Claude Code (Opus 4.7) — portal `~/Documents/nebula-logger-dashboard` + SEO task SKILL.md
