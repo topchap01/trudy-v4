@@ -4,6 +4,47 @@ Shared handoff log between Claude Code sessions, Cowork sessions, and Mark. **Ne
 
 ---
 
+## 2026-05-21 — Trevor-memory loop live; model migration; Pro upgrade; Serper fixed
+
+**Actor:** Claude Code (Opus 4.7) — portal `~/Documents/nebula-logger-dashboard`
+
+The full Trudy evaluation engine now runs end-to-end in production with every signal wired. Today was the loop closing + a chain of infra fixes to get there.
+
+### Trevor-memory loop (the "wiser over time" payoff) — SHIPPED `8212032`
+
+- New `lib/trudy/trevor-memory.js` — `getTrevorMemory({brand,category,mechanic})` queries Postgres for (a) past evaluations of the same brand/category and (b) Mark's decided proposals + his decision_note reasoning.
+- Threaded a `<trevor_memory>` block into the orchestrator brief XML (parallel to `<research_dossier>`); the evaluation_mode prompt now tells Trudy to weigh Mark's prior decisions above any framework.
+- Confirmed live: a real Beko eval logged `trevor-memory: 665 chars grounding the verdict`. Every decision Mark records in Master Control now compounds into future verdicts.
+- Important context found while building: the pipeline ALREADY grounds verdicts in live intel (`market-context.ts` reads the promos blob, `campaign-outcomes.ts` reads outcomes, plus SEO). Trevor-memory was the missing half — feeding Mark's *own decisions* back in.
+
+### Model migration `d8d1b0a` + `f89b589`
+
+- `claude-sonnet-4-20250514` was retired (EOL 2026-06-15). Migrated all five hardcoded refs (anthropic.js, models.ts, research.ts, openai.ts ×2 paths) → **`claude-sonnet-4-6`** (direct successor, same $3/$15, supports extended thinking). `MODEL_DEFAULT` env override still wins.
+- Sonnet 4.6 rejects `temperature` + `top_p` together (the old model tolerated it) → 400 error. Dropped `top_p` from all three call sites in openai.ts (it defaulted to 1, a no-op).
+- **Note for Cowork:** if any Cowork-side code calls Anthropic with both temperature and top_p, it'll 400 on 4.6+. Send temperature only.
+
+### Vercel Pro upgrade + maxDuration `e399f65`
+
+- Sonnet 4.6's main thinking call runs ~225s (≈3× the old model); the full pipeline (eval 226s + parallel scoring ~24s + alternatives-rework 109s + alt-creative ~26s ≈ 6.4 min) overran the 300s function cap and was killed mid-alternatives → UI spun forever.
+- **Mark upgraded Vercel Hobby → Pro.** `maxDuration` now 800s. Pipeline completes cleanly. This also unblocks the future portal-side intel-collection migration (those scraping jobs need >300s too).
+
+### Serper fixed `66cd827` + Mark's account fix
+
+- Web research was returning `Serper HTTP 400` on every call. Added `/api/admin/serper-test` (one-shot probe, auth-gated) + `.trim()` on the key + response-body logging.
+- Diagnosis: not whitespace, not the code — `{"message":"Not enough credits"}`. The `SERPER_API_KEY` in Vercel belonged to a different Serper account than the one Mark topped up. Mark swapped in the funded account's key → `serper-test` now returns 200 with live results. Web research is live.
+- `/api/admin/serper-test` left in place as a future diagnostic (harmless, cookie-gated).
+
+### Status: full eval stack operational
+
+Completes reliably (800s) · Sonnet 4.6 · live Serper web research · intel-blob grounding · Trevor-memory · lands in Master Control. The "data makes Trudy wiser" loop is running live.
+
+### Backlog / open
+
+- **Per-task model routing** (Opus verdict / Haiku scoring) was proposed but on inspection the eval-pipeline win is marginal: the 3 scoring calls run in parallel and are wall-time-bound by the Creative Director call (which must stay on a strong model — it generates the headlines), so Haiku-for-scoring barely moves wall-time and saves only cents/eval at current volume. The real model levers are (a) A/B Opus-4.7 vs Sonnet-4.6 on the main verdict via `MODEL_DEFAULT` (no code change), and (b) defaulting the *future* high-volume LLM work — daily sense-check, intel summaries, diff detection — to Haiku when built. Parked pending Mark's call.
+- Electrolux + promo-monitor SKILL.md fixes (from 2026-05-20) still await Cowork re-runs.
+
+---
+
 ## 2026-05-20 — Intel data-quality fixes: promos fields, electrolux gaps, sense-check guard
 
 **Actor:** Claude Code (Opus 4.7) — portal `~/Documents/nebula-logger-dashboard` + electrolux task SKILL.md
