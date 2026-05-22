@@ -4,6 +4,176 @@ Shared handoff log between Claude Code sessions, Cowork sessions, and Mark. **Ne
 
 ---
 
+## 2026-05-22 — Portal-native intel migration + the UX transformation (briefing, client command centers, Trudy strategist)
+
+**Actor:** Claude Code (Opus 4.7) — portal `~/Documents/nebula-logger-dashboard` + Cowork wine SKILL.md
+
+Big session. Two arcs: (1) migrating intel collection off Cowork into the portal, and (2) a strategic UX reframe so the portal *briefs* the team instead of just warehousing data. Portal commits span `9e1b244` → `4f141d6` (and earlier `4b4ec73`+).
+
+### Intel migration (kill the Cowork "madness")
+
+- **SF Outcomes → portal-native** (`4b4ec73`): direct jsforce query (campaigns + prize/cashback child objects via subqueries) → `lib/sf-outcomes.js`. Shared `lib/intel-ingest.js` pipeline (blob + snapshot + diff/baseline/empty proposal) now used by push AND crons. Weekly cron + `/admin` trigger. First task fully off Cowork.
+- **SEO SERP → portal-native** (`9e1b244`): `lib/seo-run.js` checks all 43 keywords via Serper (AU geo) → rankings + competitors + indexation. Weekly cron + `/admin`. Content-health/housekeeping (needs WordPress) stays on Cowork.
+- **Browserless + Claude scraping** for wine/electrolux (`1edded8`, `9ab23a5`): render via Browserless, Claude extracts campaigns. Added `/unblock` stealth fallback (`fb972dd`), wall detection (`cba4fea`), error-page detection, Samsung/LG/F&P competitor sources (`40df9e2`).
+- **Key finding — anti-bot reality:** big AU retailers (Harvey Norman, Dan Murphy's, BWS, etc.) are Incapsula/Cloudflare-walled; headless Browserless (even `/unblock`) can't reliably get through. Cowork's *real* browser can. So the landscape architecture became **composed**, not scraped:
+- **Landscapes are composed, not scraped** (`9ab23a5`): `lib/scrape-run.js` builds wine/electrolux from **Salesforce (client campaigns) + Promo Monitor (competitors) + reachable scraping** — owned data is the foundation, scraping the supplement. This was the fix after studying the original Cowork wine report (which was itself SF + Promo Monitor based, not retailer-scrape based).
+- **Additive composition** (`4f141d6`): Cowork's real-browser retailer scrape now pushes to a holding key (`wine_retail`/`electrolux_retail` — stored, no inbox noise); the portal compose layers it with SF + Promo Monitor into the dashboard `wine`/`electrolux` blob. **Collection (Cowork's strength) and composition (portal's strength) never overwrite each other.** Cowork wine SKILL.md updated to push `wine_retail`.
+- **Masterbrand model fix** (`d749ce7`): Vinarchy + Australian Vintage are portfolio companies, not labels. `lib/clients.js` now carries the real portfolios (Vinarchy: Hardys, Jacob's Creek, Grant Burge, Jam Shed, Petaluma, St Hugo/Hallett, Orlando, Banrock, Stoneleigh, Brancott, Campo Viejo; AV: McGuigan, Tempus Two, Nepenthe, Barossa Valley Estate, Lemsecco). Verified live: 16 Vinarchy + 8 AV SF campaigns split correctly; competitors resolve to Penfolds/Wynns/Kim Crawford/etc.
+
+### UX transformation (the portal becomes a strategist)
+
+- **Morning Briefing home** (`e2c4ee5`): "Today for Trevor" — decisions waiting, overnight sense-check read, what moved, campaigns ending ≤30d, data freshness. `/api/briefing`.
+- **Client Command Centers** (`7645597`): `/clients/[slug]` (Vinarchy, Australian Vintage, Electrolux) — one screen per client: their campaigns + performance, competitive landscape + **share-of-voice**, top competitors, mechanic mix, recent evaluations, pending actions. Reorganises the portal by *client*, not data source.
+- **Trudy's Strategic Read** (`cce54d7`, `0641092`): the strategist layer — Trudy reads the client's full picture + Trevor-memory and writes a client-shareable briefing (headline, the read, opportunities w/ mechanic + why-now, risks, recommended moves), exportable to Word/PPT. Migration `003_client_strategies` caches it. Uses Anthropic **tool-use** for reliable structured output (freeform JSON was truncating).
+- **Advisor sees all intel** (`7d17ea0`): chat now grounded in wine/electrolux/SEO too, not just promos/outcomes.
+- **Sortable intel tables** (`44e003e`, `cf60a97`): shared `components/intel/sortable.js` on all four tables (date parsing handles ISO/DD-MM-YY/ranges).
+
+### Operating model now
+
+| Source | Runs | Cadence |
+|---|---|---|
+| SF Outcomes | Portal (jsforce) | weekly + on-demand |
+| SEO rankings | Portal (Serper) | weekly + on-demand |
+| Wine / Electrolux | Portal *composes* (SF + Promo Monitor + Cowork `*_retail` + scrape) | monthly + on-demand |
+| Sense-check | Portal | nightly |
+| **Promo Monitor** | Cowork | fortnightly |
+| **Wine retailer depth** | Cowork → `wine_retail` | monthly |
+| **SEO content-health** | Cowork | weekly |
+
+### Mark's feedback / open
+
+- Strategic Read tone is "a bit melodramatic / aggressive" — **polish later** (Mark's call: not now).
+- **Action for Cowork:** re-run the wine task (now pushes `wine_retail`) so retailer depth flows into the composed landscape. Electrolux scraping is portal-native (manufacturers + Appliances Online aren't walled).
+- World-class roadmap still open: trend charts (trajectory from snapshots), predictive benchmarking inside Trudy (verdicts grounded in outcome numbers), "Trudy's take" captions on dashboards/briefing.
+- New env in use: `BROWSERLESS_TOKEN` (production-sfo), `SERPER_API_KEY` (funded), `CRON_SECRET`, Neon `DATABASE_URL`.
+
+---
+
+## 2026-05-21 (cont. 3) — Marketing Engine rewire, Electrolux renderer fix, intel-snapshots normalisation, Staff Guide, Promo Monitor chunked push
+
+**Actor:** Cowork (Opus 4.6) — Scheduled task SKILLs + portal `~/Documents/nebula-logger-dashboard` + staff documentation
+
+Five tasks completed in one session. All are Cowork-side fixes to scheduled task SKILLs and portal rendering — no portal git commits this round (the portal edits were `79bb504` and `4ab6b0b` from the previous Cowork session, which Claude Code then built on with `c309b5b`).
+
+### 1. Marketing Engine rewired to read from portal API
+
+**File:** `~/Documents/Claude/Scheduled/trevor-marketing-engine/SKILL.md`
+
+The Marketing Engine (Mon/Wed/Fri blog writer) had zero portal integration — it gathered competitive intel entirely from WordPress API calls and web searches. Rewired:
+
+- **Step 1d** demoted from "primary competitive intel" to "supplementary web search for breaking news only."
+- **Step 1e (NEW)** — fetches from all 5 portal API endpoints (`/api/intel/seo`, `/api/intel/promos`, `/api/intel/outcomes`, `/api/intel/wine`, `/api/intel/electrolux`) using Chrome MCP `javascript_tool` + `fetch()`. Includes a table mapping each source to what it provides and extraction guidance (SEO keyword gaps, promo mechanic counts, outcomes benchmarks, wine/electrolux landscapes).
+- **Step 2b** completely reworked — portal intel is now the primary driver for topic selection. Priority: portal signals > keyword gaps > seasonal > Shelf Truth rotation.
+- **Step 7 report template** — added "PORTAL INTELLIGENCE SNAPSHOT" section (live promo count, top mechanics, SEO gaps, pillar balance, campaign count, wine/electrolux counts) and enriched "INDUSTRY INTEL" section.
+- Added warning: "use EXACTLY `https://nebula-logger-dashboard.vercel.app` — do NOT substitute any other domain."
+
+### 2. Electrolux Landscape portal page — summary fallback renderer
+
+**File:** `~/Documents/nebula-logger-dashboard/app/intel/electrolux/page.js` (committed as `79bb504` in prior session)
+
+The Electrolux task pushed a summary object (`{brandCounts, typeCounts, gaps, ...}`) instead of the raw promo array the renderer expected. Page fell through to raw JSON dump.
+
+- Added detection branch: if no promos array but `data.brandCounts` exists → render `ElectroluxSummaryView`.
+- New `ElectroluxSummaryView` component: 7 stat cards (totalPromotions, auPromotions, nzPromotions, mostActiveBrand, dominantMechanic, electroluxGroupPromos, competitorPromos), brand breakdown bars, mechanic pills, gaps list, report metadata footer.
+- Three rendering paths now: (1) array → full dashboard, (2) summary with brandCounts → summary view, (3) unrecognised → raw JSON dump with notice.
+
+### 3. `summarizeIntel` normalisation for summary-shape payloads
+
+**File:** `~/Documents/nebula-logger-dashboard/lib/intel-snapshots.js` (committed as `4ab6b0b`, Claude Code then added `flagGapContradictions` in `c309b5b`)
+
+Mark flagged that `summarizeIntel` produced `promoCount: 0, brandCount: 0` when receiving a summary object instead of an array. The array extraction (`data.promos || data.promotions || data.records || []`) returned empty for summary shapes.
+
+- Added fallback branch in the `wine`/`electrolux` case: if `!promos.length && data.brandCounts`, extracts counts from `brandCounts`/`typeCounts`/`totalPromotions` fields.
+- Returns `summaryShape: true` flag so downstream consumers know the data was pre-aggregated.
+- Updated `bodyFor` to show gaps and summaryShape note.
+
+### 4. Staff Guide — Word document
+
+**File:** `~/Documents/Claude/Projects/Trudy — Promo Strategy Advisor/Trevor Staff Portal — Staff Guide.docx`
+
+Comprehensive "idiot's guide" introducing the portal to Trevor + Bamboo staff. Generated via docx-js in the sandbox. Covers:
+
+- Cover page with Trevor brand colours (navy #1A1A2E, gold #E6A817, teal #2DD4BF)
+- All 5 portal sections explained (Campaign Ops, Market Intel, Trudy, Client Reports, Research)
+- Scheduled tasks table (what runs, when, what it produces)
+- The intelligence loop (tasks collect → portal stores → Trudy reads → proposals generated → Mark decides → decisions feed future evaluations)
+- FAQ section
+- Tip boxes with teal left border, section cards with coloured top borders
+
+### 5. Promo Monitor — chunked portal push pattern
+
+**File:** `~/Documents/Claude/Scheduled/promo-monitor-fortnightly/SKILL.md` (lines 230–283)
+
+The task was skipping the portal push entirely because the 65KB+ baseline couldn't fit in a single Chrome MCP `javascript_tool` call (~20K char limit). The SKILL.md had a vague "split into batches" note that the task agent couldn't action.
+
+Replaced with a concrete 4-step chunked push pattern:
+- **Step 6a:** Trim each record to essential fields only (title, category, promoter, technique, method, value, parsedValue, status, dates, prizeCount). Drops ~20KB.
+- **Step 6b:** Split trimmed JSON string into ~15,000 character chunks (typically 3–4 chunks for 184 records).
+- **Step 6c:** Accumulate chunks via `window.__pushBuffer` across multiple `javascript_tool` calls (first call initialises, subsequent calls append).
+- **Step 6d:** Parse the assembled buffer and fire `fetch()` push to `/api/intel/push`. Cleans up `window.__pushBuffer` in both success and error paths.
+
+Also updated the Electrolux SKILL.md (`~/Documents/Claude/Scheduled/electrolux-promo-landscape/SKILL.md`) with an explicit "CRITICAL — What to push" section mandating raw array of records (not summary objects), plus changed placeholder from `DATA_OBJECT` to `DATA_ARRAY`.
+
+---
+
+### Current state of all systems
+
+**Portal (nebula-logger-dashboard):**
+- Latest commit on main: `d9573b9` (Claude Code — polished verdict deck)
+- Cowork's last commits: `79bb504` (Electrolux summary renderer) + `4ab6b0b` (intel-snapshots summary fallback)
+- Both merged cleanly with Claude Code's subsequent work — no conflicts
+- Deployed on Vercel Pro (800s maxDuration)
+- Neon Postgres: proposals + intel_snapshots + schema_migrations
+- Vercel Blob: raw intel payloads + evaluation verdicts
+
+**Scheduled tasks (Cowork side):**
+
+| Task | Schedule | SKILL.md status | Last known run status |
+|------|----------|-----------------|----------------------|
+| `promo-monitor-fortnightly` | Fortnightly | ✅ Fixed — chunked push pattern, parsedValue mandate, pre-push verification | Push was skipped last run (pre-fix). Needs re-run to test chunked pattern. |
+| `electrolux-promo-landscape` | Monthly | ✅ Fixed — must push raw array not summary, pre-push shape guard | Last run pushed summary object (pre-fix). Needs re-run to push records. |
+| `trevor-marketing-engine` | Mon/Wed/Fri 7:09am | ✅ Rewired — reads from all 5 portal API endpoints | Should work next scheduled run. |
+| `weekly-seo-deep-dive` | Weekly | ✅ Fixed (by Claude Code) — 43 keywords, Serper method, completeness mandate | Needs `.serper-key` saved + re-run for Serper-based baseline. |
+| `sf-outcome-export` | Weekly | Unchanged | Working — pushes to `data/sf-campaign-outcomes.json` in trudy-v4 repo. |
+| `wine-promo-landscape` | Monthly | Unchanged | Reader not yet wired into Trudy. |
+
+**Trudy v4 (apps/backend + apps/frontend):**
+- Full eval pipeline operational: Sonnet 4.6, live Serper web research, intel-blob grounding, Trevor-memory, SF campaign outcomes RAG
+- Master Control inbox with diff-aware proposals + daily sense-check cron
+- Copy/export (Word + PPTX) on Trudy chat responses
+- Polished verdict deck (`d9573b9`)
+- File attachments in Ask Trudy (PDF, DOCX, XLSX, CSV, TXT)
+
+### Outstanding / next actions
+
+**Cowork re-runs needed (highest priority):**
+1. Re-run `electrolux-promo-landscape` — currently pushes summary objects; updated SKILL.md mandates raw array
+2. Re-run `promo-monitor-fortnightly` — test the new chunked push pattern; also need parsedValue normalisation
+3. Save Serper key to `~/Documents/Claude/Scheduled/trevor-marketing-engine/.serper-key` and re-run `weekly-seo-deep-dive` for Serper-based 43-keyword baseline
+
+**Portal features not yet built:**
+4. Electrolux landscape → Trudy reader (whitegoods-specific competitor data alongside generic Promo Monitor)
+5. Wine landscape → Trudy reader
+6. Competitive intelligence in CREATE phase — Jax (creative agent) should see what competitors are running
+7. Outcome feedback loop — Trudy reasons with past campaigns (one-way) but doesn't capture per-verdict scoring as feedback
+8. Move intel collection to portal (kill Cowork tasks) — SF Outcomes first, SEO next, scraping tasks last
+
+**Quality / polish:**
+9. Port polished deck design language into chat-export PPTX (currently simpler generator)
+10. Visual QA pass on real PPTX decks (no LibreOffice on Mac for automated check)
+11. Alternative-route differentiation bug (identical signature moments across SAFE/BOLD/RIDICULOUS)
+12. Reclassification trigger when only Creative Director scores ≥8
+
+### Coordination notes for next session
+
+- **Watch for merge conflicts** in `lib/intel-snapshots.js` and `app/intel/electrolux/page.js` — both Cowork and Claude Code edit these files. So far merges have been clean because they touch adjacent concerns.
+- **Push secret location:** `~/Documents/Claude/Scheduled/trevor-marketing-engine/.portal-push-secret` — all tasks that push to the portal read the bearer token from here.
+- **Portal URL:** always `https://nebula-logger-dashboard.vercel.app` — hardcoded in all SKILL.md files.
+- **Bash sandbox limitation:** no external network access from the sandbox. All HTTP calls to the portal must go through Chrome MCP `javascript_tool` + `fetch()`. This is why the chunked push pattern exists.
+- **Nav.jsx sections:** Campaign Ops, Market Intel, Trudy, Client Reports, Research, System. The `SECTIONS` array in `components/Nav.jsx` and the `SECTIONS` array in `app/page.js` must stay in sync when adding new pages.
+
+---
+
 ## 2026-05-21 (cont. 2) — Document output: copy/export, deck polish, backend spike → skipped
 
 **Actor:** Claude Code (Opus 4.7) — portal `~/Documents/nebula-logger-dashboard`
